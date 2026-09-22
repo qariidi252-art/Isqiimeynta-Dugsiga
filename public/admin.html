@@ -1,1 +1,421 @@
+<!DOCTYPE html>
+<html lang="so">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maamulka — Qiimeynta Macallimiinta</title>
+<style>
+  :root {
+    --bg:#f4f6f8; --surface:#fff; --surface-2:#eef1f4; --text:#1c2530; --text-dim:#5b6b7a;
+    --border:#dde3e9; --primary:#1e6f5c; --primary-dark:#14503f; --accent:#2f7fd1;
+    --good:#1e8e5a; --warn:#c98a13; --bad:#c0392b;
+    --shadow:0 1px 3px rgba(20,30,40,.08),0 1px 2px rgba(20,30,40,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12171c; --surface:#1a2128; --surface-2:#212a32; --text:#e7edf2; --text-dim:#93a3b1;
+      --border:#2a343d; --primary:#3fae8f; --primary-dark:#2c8168; --accent:#5b9fe0;
+      --good:#3fae7a; --warn:#e0ac3f; --bad:#e0685b; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; font-size:15px; }
+  header { padding:16px; background:linear-gradient(135deg,var(--primary-dark),var(--primary)); color:#fff; }
+  header h1 { margin:0 0 2px; font-size:1.15rem; }
+  header p { margin:0; font-size:.8rem; opacity:.85; }
+  nav.tabs { display:flex; gap:6px; overflow-x:auto; padding:10px 12px; background:var(--surface); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:10; }
+  nav.tabs button { flex:0 0 auto; border:1px solid var(--border); background:var(--surface-2); color:var(--text); padding:8px 14px; border-radius:20px; font-size:.85rem; font-weight:600; cursor:pointer; }
+  nav.tabs button.active { background:var(--primary); border-color:var(--primary); color:#fff; }
+  main { padding:14px; max-width:760px; margin:0 auto; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px; box-shadow:var(--shadow); }
+  .card h2 { margin:0 0 12px; font-size:1rem; }
+  .stat-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:14px; }
+  .stat { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px; text-align:center; box-shadow:var(--shadow); }
+  .stat .num { font-size:1.6rem; font-weight:800; color:var(--primary); }
+  .stat .lbl { font-size:.75rem; color:var(--text-dim); }
+  label { display:block; font-size:.8rem; font-weight:600; color:var(--text-dim); margin:10px 0 4px; }
+  input[type=text],input[type=password],input[type=date],select,textarea {
+    width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:.95rem; font-family:inherit;
+  }
+  textarea { resize:vertical; min-height:60px; }
+  .range-row { display:flex; align-items:center; gap:10px; }
+  input[type=range] { flex:1; accent-color:var(--primary); }
+  .range-val { min-width:30px; text-align:center; font-weight:800; color:var(--primary); }
+  .btn { display:inline-block; background:var(--primary); color:#fff; border:none; padding:11px 18px; border-radius:10px; font-weight:700; font-size:.9rem; cursor:pointer; margin-top:12px; }
+  .btn.secondary { background:var(--surface-2); color:var(--text); border:1px solid var(--border); }
+  .teacher-row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:12px 4px; border-bottom:1px solid var(--border); }
+  .teacher-row:last-child { border-bottom:none; }
+  .teacher-row .name { font-weight:700; cursor:pointer; }
+  .teacher-row .sub { font-size:.78rem; color:var(--text-dim); }
+  .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:.75rem; font-weight:700; color:#fff; }
+  .badge.good { background:var(--good); } .badge.warn { background:var(--warn); } .badge.bad { background:var(--bad); } .badge.neutral { background:var(--text-dim); }
+  .empty { text-align:center; padding:28px 10px; color:var(--text-dim); font-size:.9rem; }
+  .backbtn { background:none; border:none; color:var(--accent); font-weight:700; font-size:.85rem; padding:0 0 10px; cursor:pointer; }
+  .eval-item { border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:10px; background:var(--surface-2); }
+  .eval-item .row1 { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+  .mini-scores { display:flex; gap:10px; flex-wrap:wrap; font-size:.78rem; color:var(--text-dim); }
+  .mini-scores b { color:var(--text); }
+  .notes-txt { font-size:.82rem; color:var(--text-dim); margin-top:6px; white-space:pre-wrap; }
+  .chart-wrap { position:relative; height:220px; margin-top:8px; }
+  .compare-note { font-size:.8rem; padding:10px 12px; border-radius:10px; margin-top:10px; }
+  .compare-note.ok { background:rgba(30,142,90,.12); color:var(--good); }
+  .compare-note.pending { background:rgba(201,138,19,.12); color:var(--warn); }
+  .del-x { background:none; border:none; color:var(--bad); font-size:1.1rem; cursor:pointer; padding:2px 6px; }
+  .loading { text-align:center; padding:40px; color:var(--text-dim); }
+  .link-box { display:flex; gap:6px; align-items:center; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:8px 10px; margin-top:8px; font-size:.78rem; word-break:break-all; }
+  .link-box button { flex:0 0 auto; }
+  #loginScreen { max-width:340px; margin:60px auto; text-align:center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛠️ Maamulka — Qiimeynta Macallimiinta</h1>
+  <p>Bogga maamulaha — kaliya kuwa sirta haysta</p>
+</header>
 
+<div id="loginScreen" style="display:none;">
+  <div class="card">
+    <h2>Gal Maamulka</h2>
+    <label>Sirta (Password)</label>
+    <input type="password" id="pwInput" placeholder="Geli sirta">
+    <button class="btn" id="loginBtn" style="width:100%;">Gal</button>
+    <p id="loginErr" style="color:var(--bad);font-size:.8rem;"></p>
+  </div>
+</div>
+
+<div id="appShell" style="display:none;">
+  <nav class="tabs">
+    <button data-tab="dashboard" class="active">Guddiga Guud</button>
+    <button data-tab="teachers">Macallimiinta</button>
+    <button data-tab="newEval">Qiimeyn Cusub</button>
+  </nav>
+  <main id="app"><div class="loading">Soo dejinaya...</div></main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  const CRITERIA = [
+    { key:"prep", label:"Cashardiyaarinta", full:"Cashardiyaarinta (waafaqsan jadwalka Xafiiska Waxbarashada)", color:"#2f7fd1" },
+    { key:"classroom", label:"Maareynta Fasalka", full:"Maareynta Fasalka (Class Management)", color:"#1e6f5c" },
+    { key:"assessment", label:"Qiimeynta Ardayda", full:"Qiimeynta Ardayda", color:"#c98a13" }
+  ];
+
+  let teachers = [];
+  let evaluations = [];
+  let currentTeacherId = null;
+  let activeTab = "dashboard";
+  let preselectTeacher = null;
+  let chartInstance = null;
+
+  const app = document.getElementById("app");
+  const PW_KEY = "qm_admin_pw";
+
+  function getPw(){ return localStorage.getItem(PW_KEY) || ""; }
+
+  async function api(path, opts){
+    opts = opts || {};
+    opts.headers = Object.assign({ "Content-Type":"application/json", "x-admin-password": getPw() }, opts.headers||{});
+    const res = await fetch(path, opts);
+    if (res.status === 401){ showLogin("Sirta waa qalad, fadlan isku day mar kale."); throw new Error("unauthorized"); }
+    if (!res.ok){ const j = await res.json().catch(()=>({})); throw new Error(j.error||"server error"); }
+    return res.status === 204 ? null : res.json();
+  }
+
+  function showLogin(err){
+    document.getElementById("loginScreen").style.display = "block";
+    document.getElementById("appShell").style.display = "none";
+    document.getElementById("loginErr").textContent = err || "";
+  }
+  function showApp(){
+    document.getElementById("loginScreen").style.display = "none";
+    document.getElementById("appShell").style.display = "block";
+  }
+
+  document.getElementById("loginBtn").addEventListener("click", async ()=>{
+    const pw = document.getElementById("pwInput").value;
+    try {
+      const res = await fetch("/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password: pw}) });
+      const j = await res.json();
+      if (j.ok){ localStorage.setItem(PW_KEY, pw); showApp(); loadAll(); }
+      else document.getElementById("loginErr").textContent = "Sirta waa qalad.";
+    } catch(e){ document.getElementById("loginErr").textContent = "Khalad server ah."; }
+  });
+  document.getElementById("pwInput").addEventListener("keydown", e=>{ if (e.key==="Enter") document.getElementById("loginBtn").click(); });
+
+  document.querySelectorAll("nav.tabs button").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.remove("active"));
+      btn.classList.add("active");
+      activeTab = btn.dataset.tab;
+      currentTeacherId = null;
+      render();
+    });
+  });
+
+  async function loadAll(){
+    try {
+      teachers = await api("/api/teachers");
+      evaluations = await api("/api/evaluations");
+      render();
+    } catch(e){ console.error(e); }
+  }
+
+  async function boot(){
+    const pw = getPw();
+    if (!pw){ showLogin(); return; }
+    try {
+      const res = await fetch("/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password: pw}) });
+      const j = await res.json();
+      if (j.ok){ showApp(); loadAll(); } else showLogin();
+    } catch(e){ showLogin("Khalad xidhiidh server ah."); }
+  }
+
+  function uid(){ return "id"+Date.now()+Math.random().toString(36).slice(2,8); }
+  function avgOf(ev){ return (Number(ev.prep||0)+Number(ev.classroom||0)+Number(ev.assessment||0))/3; }
+  function fmt1(n){ return (Math.round(n*10)/10).toFixed(1); }
+  function scoreBadgeClass(avg){ if (avg>=8) return "good"; if (avg>=6) return "warn"; return "bad"; }
+  function scoreLabel(avg){ if (avg>=8) return "Wanaagsan"; if (avg>=6) return "Dhexdhexaad"; return "U baahan taageero"; }
+  function teacherEvals(id){ return evaluations.filter(e=>e.teacher_id===id).sort((a,b)=>new Date(a.date)-new Date(b.date)); }
+  function teacherLatestAvg(id){ const e=teacherEvals(id); return e.length? avgOf(e[e.length-1]) : null; }
+  function teacherOverallAvg(id){ const e=teacherEvals(id); if(!e.length) return null; return e.reduce((a,x)=>a+avgOf(x),0)/e.length; }
+  function escapeHtml(s){ return String(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+
+  async function addTeacher(name, subject){
+    const t = await api("/api/teachers", { method:"POST", body: JSON.stringify({name, subject}) });
+    await loadAll();
+    return t;
+  }
+  async function deleteTeacher(id){ await api("/api/teachers/"+id, { method:"DELETE" }); if (currentTeacherId===id) currentTeacherId=null; await loadAll(); }
+  async function addEvaluation(teacherId, date, prep, classroom, assessment, notes){
+    await api("/api/evaluations", { method:"POST", body: JSON.stringify({teacherId, date, prep, classroom, assessment, notes}) });
+    await loadAll();
+  }
+  async function deleteEvaluation(id){ await api("/api/evaluations/"+id, { method:"DELETE" }); await loadAll(); }
+
+  function render(){
+    if (activeTab==="dashboard") return renderDashboard();
+    if (activeTab==="teachers") return currentTeacherId ? renderTeacherDetail(currentTeacherId) : renderTeachers();
+    if (activeTab==="newEval") return renderNewEval();
+  }
+
+  function renderDashboard(){
+    const totalTeachers = teachers.length;
+    const totalEvals = evaluations.length;
+    const overallAvg = totalEvals ? fmt1(evaluations.reduce((a,e)=>a+avgOf(e),0)/totalEvals) : "—";
+    const needAttention = teachers.filter(t=>{ const a=teacherLatestAvg(t.id); return a!==null && a<6; }).length;
+
+    let rows = teachers.map(t=>{
+      const evs = teacherEvals(t.id);
+      const latest = evs.length ? avgOf(evs[evs.length-1]) : null;
+      const prev = evs.length>1 ? avgOf(evs[evs.length-2]) : null;
+      let trend = "";
+      if (latest!==null && prev!==null){ trend = latest>prev+0.05?"▲":latest<prev-0.05?"▼":"▬"; }
+      return { t, evs, latest, trend };
+    }).sort((a,b)=>{
+      if (a.latest===null && b.latest===null) return 0;
+      if (a.latest===null) return 1;
+      if (b.latest===null) return -1;
+      return a.latest - b.latest;
+    });
+
+    app.innerHTML = `
+      <div class="stat-grid">
+        <div class="stat"><div class="num">${totalTeachers}</div><div class="lbl">Macallimiin</div></div>
+        <div class="stat"><div class="num">${totalEvals}</div><div class="lbl">Qiimeymo Guud</div></div>
+        <div class="stat"><div class="num">${overallAvg}</div><div class="lbl">Celceliska Guud /10</div></div>
+        <div class="stat"><div class="num" style="color:${needAttention?'var(--bad)':'var(--good)'}">${needAttention}</div><div class="lbl">U Baahan Taageero</div></div>
+      </div>
+      <div class="card">
+        <h2>Liiska Macallimiinta</h2>
+        ${rows.length===0 ? `<div class="empty">Wali macallin lama gelin.</div>` :
+        rows.map(r=>{
+          const badge = r.latest===null ? `<span class="badge neutral">Wali lama qiimeyn</span>` : `<span class="badge ${scoreBadgeClass(r.latest)}">${fmt1(r.latest)}/10 ${r.trend}</span>`;
+          return `<div class="teacher-row" data-open="${r.t.id}" style="cursor:pointer;">
+            <div><div class="name">${escapeHtml(r.t.name)}</div><div class="sub">${escapeHtml(r.t.subject||"")} · ${r.evs.length} qiimeyn</div></div>
+            ${badge}
+          </div>`;
+        }).join("")}
+      </div>
+    `;
+    app.querySelectorAll("[data-open]").forEach(el=>{
+      el.addEventListener("click", ()=>{
+        currentTeacherId = el.dataset.open;
+        document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.remove("active"));
+        document.querySelector('nav.tabs button[data-tab="teachers"]').classList.add("active");
+        activeTab = "teachers"; render();
+      });
+    });
+  }
+
+  function renderTeachers(){
+    app.innerHTML = `
+      <div class="card">
+        <h2>Ku dar Macallin Cusub</h2>
+        <label>Magaca Macallinka</label>
+        <input type="text" id="newTeacherName" placeholder="tusaale: Xasan Cali Maxamed">
+        <label>Maadada / Xilliga (ikhtiyaari)</label>
+        <input type="text" id="newTeacherSubject" placeholder="tusaale: Xisaabta, Fasalka 5">
+        <button class="btn" id="btnAddTeacher">➕ Ku Dar Macallin</button>
+      </div>
+      <div class="card">
+        <h2>Dhammaan Macallimiinta (${teachers.length})</h2>
+        ${teachers.length===0 ? `<div class="empty">Wali macallin lama gelin.</div>` :
+        teachers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(t=>{
+          const evs = teacherEvals(t.id);
+          const overall = teacherOverallAvg(t.id);
+          return `<div class="teacher-row">
+            <div style="cursor:pointer;" data-open="${t.id}">
+              <div class="name">${escapeHtml(t.name)}</div>
+              <div class="sub">${escapeHtml(t.subject||"")} · ${evs.length} qiimeyn</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              ${overall!==null ? `<span class="badge ${scoreBadgeClass(overall)}">${fmt1(overall)}/10</span>` : `<span class="badge neutral">—</span>`}
+              <button class="del-x" data-del="${t.id}" title="Tirtir">✕</button>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+    `;
+    document.getElementById("btnAddTeacher").addEventListener("click", async ()=>{
+      const name = document.getElementById("newTeacherName").value;
+      const subject = document.getElementById("newTeacherSubject").value;
+      if (!name.trim()){ alert("Fadlan geli magaca macallinka."); return; }
+      const btn = document.getElementById("btnAddTeacher"); btn.disabled = true;
+      try { await addTeacher(name, subject); } finally { btn.disabled = false; }
+    });
+    app.querySelectorAll("[data-open]").forEach(el=>{
+      el.addEventListener("click", ()=>{ currentTeacherId = el.dataset.open; render(); });
+    });
+    app.querySelectorAll("[data-del]").forEach(el=>{
+      el.addEventListener("click", async (ev)=>{
+        ev.stopPropagation();
+        const t = teachers.find(x=>x.id===el.dataset.del);
+        if (confirm(`Ma hubtaa inaad tirtirto ${t?t.name:"macallinkan"} iyo dhammaan qiimeymihiisa?`)) await deleteTeacher(el.dataset.del);
+      });
+    });
+  }
+
+  function renderTeacherDetail(teacherId){
+    const t = teachers.find(x=>x.id===teacherId);
+    if (!t){ currentTeacherId=null; return renderTeachers(); }
+    const evs = teacherEvals(teacherId);
+    const overall = teacherOverallAvg(teacherId);
+    const link = window.location.origin + "/t/" + t.token;
+
+    app.innerHTML = `
+      <button class="backbtn" id="backBtn">← Dib ugu noqo liiska</button>
+      <div class="card">
+        <h2>${escapeHtml(t.name)}</h2>
+        <div class="sub" style="color:var(--text-dim);margin-bottom:8px;">${escapeHtml(t.subject||"")}</div>
+        ${overall!==null ? `<span class="badge ${scoreBadgeClass(overall)}">Celceliska Guud: ${fmt1(overall)}/10 · ${scoreLabel(overall)}</span>` : `<span class="badge neutral">Wali lama qiimeyn</span>`}
+        ${evs.length>=2 ? `<div class="chart-wrap"><canvas id="teacherChart"></canvas></div>` : ""}
+        ${evs.length<3 ? `<div class="compare-note pending">📌 Waxaad heysaa ${evs.length} qiimeyn. Ugu yaraan 3 ayaa loo baahan yahay si loo isbarbardhigo horumarka.</div>` : `<div class="compare-note ok">✅ ${evs.length} qiimeyn — waad isbarbardhigi kartaa horumarka.</div>`}
+        <label>🔗 Link-ga macallinku uu ula socon karo xogtiisa (u dir isaga)</label>
+        <div class="link-box"><span id="teacherLink">${link}</span><button class="btn secondary" id="copyLinkBtn" style="margin:0;padding:6px 10px;">Koobi</button></div>
+      </div>
+      <div class="card">
+        <h2>Taariikhda Qiimeymaha (${evs.length})</h2>
+        ${evs.length===0 ? `<div class="empty">Macallinkan wali lama qiimeynin.</div>` :
+        evs.slice().reverse().map(e=>{
+          const a = avgOf(e);
+          return `<div class="eval-item">
+            <div class="row1"><span style="font-weight:700;font-size:.85rem;">${e.date}</span>
+              <span style="display:flex;align-items:center;gap:6px;"><span class="badge ${scoreBadgeClass(a)}">${fmt1(a)}/10</span><button class="del-x" data-delev="${e.id}">✕</button></span>
+            </div>
+            <div class="mini-scores">
+              <span>${CRITERIA[0].label}: <b>${e.prep}</b>/10</span>
+              <span>${CRITERIA[1].label}: <b>${e.classroom}</b>/10</span>
+              <span>${CRITERIA[2].label}: <b>${e.assessment}</b>/10</span>
+            </div>
+            ${e.notes ? `<div class="notes-txt">📝 ${escapeHtml(e.notes)}</div>` : ""}
+          </div>`;
+        }).join("")}
+      </div>
+      <div class="card">
+        <button class="btn secondary" id="goEvalBtn">➕ Ku Dar Qiimeyn Cusub oo ${escapeHtml(t.name)} ah</button>
+      </div>
+    `;
+    document.getElementById("backBtn").addEventListener("click", ()=>{ currentTeacherId=null; render(); });
+    document.getElementById("copyLinkBtn").addEventListener("click", ()=>{
+      navigator.clipboard.writeText(link).then(()=>{
+        const b = document.getElementById("copyLinkBtn"); b.textContent="La koobiyay ✓"; setTimeout(()=>b.textContent="Koobi",1500);
+      });
+    });
+    document.getElementById("goEvalBtn").addEventListener("click", ()=>{
+      document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.remove("active"));
+      document.querySelector('nav.tabs button[data-tab="newEval"]').classList.add("active");
+      activeTab = "newEval"; preselectTeacher = teacherId; render();
+    });
+    app.querySelectorAll("[data-delev]").forEach(el=>{
+      el.addEventListener("click", async ()=>{ if (confirm("Ma hubtaa inaad tirtirto qiimeyntan?")) await deleteEvaluation(el.dataset.delev); });
+    });
+
+    if (evs.length>=2 && window.Chart){
+      const ctx = document.getElementById("teacherChart");
+      if (chartInstance){ chartInstance.destroy(); chartInstance=null; }
+      const cssVal = getComputedStyle(document.documentElement);
+      const textColor = cssVal.getPropertyValue('--text').trim()||'#333';
+      const gridColor = cssVal.getPropertyValue('--border').trim()||'#ddd';
+      chartInstance = new Chart(ctx, {
+        type:"line",
+        data:{ labels: evs.map(e=>e.date), datasets: CRITERIA.map(c=>({label:c.label,data:evs.map(e=>Number(e[c.key])),borderColor:c.color,backgroundColor:c.color,tension:.3,pointRadius:4})) },
+        options:{ responsive:true, maintainAspectRatio:false,
+          scales:{ y:{min:0,max:10,ticks:{color:textColor,stepSize:2},grid:{color:gridColor}}, x:{ticks:{color:textColor},grid:{color:gridColor}} },
+          plugins:{ legend:{labels:{color:textColor,boxWidth:12,font:{size:10}}} } }
+      });
+    }
+  }
+
+  function renderNewEval(){
+    const today = new Date().toISOString().slice(0,10);
+    app.innerHTML = `
+      <div class="card">
+        <h2>Qiimeyn Cusub</h2>
+        ${teachers.length===0 ? `<div class="empty">Marka hore ku dar macallin tab-ka "Macallimiinta".</div>` : `
+        <label>Dooro Macallinka</label>
+        <select id="evalTeacherSel">
+          <option value="">— Dooro —</option>
+          ${teachers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(t=>`<option value="${t.id}" ${preselectTeacher===t.id?"selected":""}>${escapeHtml(t.name)}${t.subject?" — "+escapeHtml(t.subject):""}</option>`).join("")}
+        </select>
+        <label>Taariikhda Kormeerka</label>
+        <input type="date" id="evalDate" value="${today}">
+        ${CRITERIA.map(c=>`
+          <label>${c.full} <span style="font-weight:400;color:var(--text-dim);">(1–10)</span></label>
+          <div class="range-row"><input type="range" min="1" max="10" step="1" value="7" id="range_${c.key}"><span class="range-val" id="val_${c.key}">7</span></div>
+        `).join("")}
+        <label>Fiiro Gaar Ah (ikhtiyaari)</label>
+        <textarea id="evalNotes" placeholder="Faallooyin, talooyin loogu talagalay macallinka..."></textarea>
+        <button class="btn" id="saveEvalBtn">💾 Kaydi Qiimeynta</button>
+        `}
+      </div>
+    `;
+    if (teachers.length===0) return;
+    CRITERIA.forEach(c=>{
+      const r=document.getElementById("range_"+c.key), v=document.getElementById("val_"+c.key);
+      r.addEventListener("input", ()=>{ v.textContent=r.value; });
+    });
+    document.getElementById("saveEvalBtn").addEventListener("click", async ()=>{
+      const teacherId = document.getElementById("evalTeacherSel").value;
+      const date = document.getElementById("evalDate").value;
+      if (!teacherId){ alert("Fadlan dooro macallin."); return; }
+      if (!date){ alert("Fadlan geli taariikhda."); return; }
+      const prep = document.getElementById("range_prep").value;
+      const classroom = document.getElementById("range_classroom").value;
+      const assessment = document.getElementById("range_assessment").value;
+      const notes = document.getElementById("evalNotes").value;
+      const btn = document.getElementById("saveEvalBtn"); btn.disabled=true; btn.textContent="Kaydinaya...";
+      try {
+        await addEvaluation(teacherId, date, prep, classroom, assessment, notes);
+        preselectTeacher = null; currentTeacherId = teacherId;
+        document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.remove("active"));
+        document.querySelector('nav.tabs button[data-tab="teachers"]').classList.add("active");
+        activeTab = "teachers"; render();
+      } catch(e){ alert("Khalad ayaa dhacay: "+e.message); btn.disabled=false; btn.textContent="💾 Kaydi Qiimeynta"; }
+    });
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

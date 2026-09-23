@@ -482,14 +482,6 @@
         <input type="text" id="evalFollowupAction" placeholder="...">
         <label>Waqtiga dabagalka</label>
         <input type="text" id="evalFollowupDate" placeholder="tusaale: 3 toddobaad">
-      </div>
-
-      <div class="card">
-        <h2>Saxiixyada</h2>
-        <label>Saxiixa Macallinka (magaca)</label>
-        <input type="text" id="evalTeacherSig" placeholder="Magaca macallinka">
-        <label>Saxiixa Kormeeraha/Maamulaha (magaca)</label>
-        <input type="text" id="evalSupervisorSig" placeholder="Magaca kormeeraha">
         <button class="btn" id="saveEvalBtn" disabled>💾 Kaydi Qiimeynta (buuxi 10-da su'aal marka hore)</button>
       </div>
     `;
@@ -560,9 +552,7 @@
         recommendations: document.getElementById("evalRecommendations").value,
         followupArea: document.getElementById("evalFollowupArea").value,
         followupAction: document.getElementById("evalFollowupAction").value,
-        followupDate: document.getElementById("evalFollowupDate").value,
-        teacherSignature: document.getElementById("evalTeacherSig").value,
-        supervisorSignature: document.getElementById("evalSupervisorSig").value
+        followupDate: document.getElementById("evalFollowupDate").value
       };
       const btn = document.getElementById("saveEvalBtn"); btn.disabled=true; btn.textContent="Kaydinaya...";
       try {

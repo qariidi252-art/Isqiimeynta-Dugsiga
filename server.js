@@ -37,12 +37,14 @@ async function initDb() {
     date DATE NOT NULL,
     items JSONB NOT NULL DEFAULT '[]',
     score NUMERIC NOT NULL DEFAULT 0,
+    meta JSONB NOT NULL DEFAULT '{}',
     notes TEXT DEFAULT '',
     created_at TIMESTAMPTZ DEFAULT now()
   )`);
   // Migration safety: if an older deploy created the table with the old columns,
   // make sure the new columns exist too.
   await pool.query(`ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'`);
+  await pool.query(`ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS meta JSONB NOT NULL DEFAULT '{}'`);
   await pool.query(`ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS score NUMERIC NOT NULL DEFAULT 0`);
   // Drop obsolete columns from the old 3-field schema (prep/classroom/assessment)
   // so inserts using the new "items" JSONB column don't fail on NOT NULL.
@@ -149,29 +151,42 @@ app.get("/api/evaluations", requireAdmin, async (req, res) => {
 
 app.post("/api/evaluations", requireAdmin, async (req, res) => {
   try {
-    const { teacherId, date, items, notes } = req.body || {};
+    const { teacherId, date, items, meta } = req.body || {};
     if (!teacherId || !date) return res.status(400).json({ error: "missing fields" });
     if (!Array.isArray(items) || !items.length) return res.status(400).json({ error: "items required" });
-    // Validate + compute score server-side (rating: 0=Maya,1=Qayb ahaan,2=Haa)
+    // Validate + compute score server-side (rating: 1-5 scale)
     let sum = 0;
     const cleanItems = items.map((it) => {
       const rating = Number(it.rating);
-      if (![0, 1, 2].includes(rating)) throw new Error("invalid rating");
+      if (![1, 2, 3, 4, 5].includes(rating)) throw new Error("invalid rating");
       sum += rating;
       return {
         key: String(it.key || ""),
-        group: String(it.group || ""),
+        title: String(it.title || ""),
         text: String(it.text || ""),
         rating,
         comment: String(it.comment || "").trim(),
       };
     });
-    const score = Math.round((sum / (cleanItems.length * 2)) * 1000) / 10; // percentage, 1 decimal
+    const score = Math.round((sum / (cleanItems.length * 5)) * 1000) / 10; // percentage, 1 decimal
+    const cleanMeta = {
+      school: String((meta && meta.school) || "").trim(),
+      class: String((meta && meta.class) || "").trim(),
+      supervisorName: String((meta && meta.supervisorName) || "").trim(),
+      strengths: String((meta && meta.strengths) || "").trim(),
+      improvements: String((meta && meta.improvements) || "").trim(),
+      recommendations: String((meta && meta.recommendations) || "").trim(),
+      followupArea: String((meta && meta.followupArea) || "").trim(),
+      followupAction: String((meta && meta.followupAction) || "").trim(),
+      followupDate: String((meta && meta.followupDate) || "").trim(),
+      teacherSignature: String((meta && meta.teacherSignature) || "").trim(),
+      supervisorSignature: String((meta && meta.supervisorSignature) || "").trim(),
+    };
     const id = crypto.randomUUID();
     await pool.query(
-      `INSERT INTO evaluations (id, teacher_id, date, items, score, notes)
+      `INSERT INTO evaluations (id, teacher_id, date, items, score, meta)
        VALUES ($1,$2,$3,$4,$5,$6)`,
-      [id, teacherId, date, JSON.stringify(cleanItems), score, (notes || "").trim()]
+      [id, teacherId, date, JSON.stringify(cleanItems), score, JSON.stringify(cleanMeta)]
     );
     res.json({ ok: true, id, score });
   } catch (e) {

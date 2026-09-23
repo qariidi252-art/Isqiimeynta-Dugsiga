@@ -24,6 +24,7 @@
   main { padding:14px; max-width:700px; margin:0 auto; }
   .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px; box-shadow:var(--shadow); }
   .card h2 { margin:0 0 4px; font-size:1.1rem; }
+  .card h3 { margin:0 0 8px; font-size:.9rem; }
   .sub { color:var(--text-dim); font-size:.85rem; margin-bottom:10px; }
   .badge { display:inline-block; padding:4px 12px; border-radius:20px; font-size:.85rem; font-weight:700; color:#fff; }
   .badge.good { background:var(--good); } .badge.warn { background:var(--warn); } .badge.bad { background:var(--bad); } .badge.neutral { background:var(--text-dim); }
@@ -33,14 +34,22 @@
   .chart-wrap { position:relative; height:240px; margin-top:14px; }
   .eval-item { border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:10px; background:var(--surface-2); }
   .eval-item .row1 { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
-  .mini-scores { display:flex; gap:10px; flex-wrap:wrap; font-size:.8rem; color:var(--text-dim); }
-  .mini-scores b { color:var(--text); }
+  .cat-badges { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+  .cat-badge { font-size:.72rem; padding:3px 9px; border-radius:12px; background:var(--surface); border:1px solid var(--border); color:var(--text-dim); }
   .notes-txt { font-size:.83rem; color:var(--text-dim); margin-top:6px; white-space:pre-wrap; }
   .empty, .loading { text-align:center; padding:40px 10px; color:var(--text-dim); }
   .stat-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:14px; }
   .stat { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px; text-align:center; box-shadow:var(--shadow); }
   .stat .num { font-size:1.5rem; font-weight:800; color:var(--primary); }
   .stat .lbl { font-size:.72rem; color:var(--text-dim); }
+  details { margin-top:8px; }
+  summary { font-size:.8rem; color:var(--primary); cursor:pointer; font-weight:600; }
+  .qrow { padding:8px 0; border-bottom:1px solid var(--border); font-size:.82rem; }
+  .qrow:last-child { border-bottom:none; }
+  .qrow .qtext { margin-bottom:4px; }
+  .qtag { display:inline-block; font-size:.7rem; font-weight:700; padding:2px 8px; border-radius:10px; color:#fff; }
+  .qtag.r2 { background:var(--good); } .qtag.r1 { background:var(--warn); } .qtag.r0 { background:var(--bad); }
+  .qcomment { color:var(--text-dim); font-size:.78rem; margin-top:3px; }
 </style>
 </head>
 <body>
@@ -54,17 +63,74 @@
 <script>
 (function(){
   "use strict";
-  const CRITERIA = [
-    { key:"prep", label:"Cashardiyaarinta", color:"#2f7fd1" },
-    { key:"classroom", label:"Maareynta Fasalka", color:"#1e6f5c" },
-    { key:"assessment", label:"Qiimeynta Ardayda", color:"#c98a13" }
+
+  const CRITERIA_GROUPS = [
+    {
+      key: "manhaj",
+      title: "A. Fulinta Manhajka",
+      items: [
+        "Macallinku si sax ah ma u adeegsadaa Muqarrarka (Syllabus)?",
+        "Macallinku ma leeyahay aqoon iyo tababar ku filan oo ku saabsan fulinta manhajka?",
+        "Macallinku ma haystaa nuqul ansaxsan oo Qorshe-wadeedka (Scheme of Work) ah?"
+      ]
+    },
+    {
+      key: "diyaarin",
+      title: "B. Howlaha Cashar Diyaarinta",
+      items: [
+        "Macallinku ma leeyahay Qorshe Shaqo iyo Cashar-diyaarin (Lesson Plan) oo laga soo saaray manhajka qaranka?",
+        "Macallinku ma haystaa agabka waxbarashada ee loo baahan yahay, sida buugga hagaha macallinka?",
+        "Macallinku ma aqoonsadaa kartida, waaya-aragnimada iyo xirfadaha ardayda, wuxuuna ma ku xiraa casharka cusub casharradii hore?",
+        "Macallinku ma adeegsadaa hababka wax-dhigidda isaga oo tixgelinaya kala duwanaanshaha da'da iyo kartida ardayda?",
+        "Macallinku ma hubiyaa fahamka ardayga inta casharku socdo?",
+        "Ardaydu ma si firfircoon ayay uga qaybqaataan casharka?"
+      ]
+    },
+    {
+      key: "fasal",
+      title: "C. Maareynta Fasalka",
+      items: [
+        "Fasalku ma yahay mid ku habboon baridda iyo barashada?",
+        "Macallinku ma adeegsadaa xeelado edbin togan si uu u maareeyo fasalka?",
+        "Macallinku ma raacaa habraaca ilaalinta ardayda iyo heerka anshaxa?",
+        "Macallinku ma sameeyaa socsocod gudaha fasalka ah si uu ula socdo dhaqdhaqaaqa ardayda (Class Movement/Eye Contact)?",
+        "Macallinku ma ixtiraamaa ardayda, qof kastana ma siiyaa fursad siman oo uu wax ku barto?",
+        "Macallinku ma xaadiriyaa ardayda bilowga iyo dhammaadka xiisadda?",
+        "Macallinku ma kor u qaadaa xiisaha iyo dhiirigelinta ardayda, isagoo hordhaca casharka ka dhigaya mid xiiso leh oo soo jiidasho leh?",
+        "Macallinku ma la sameeyaa dhammaan ardayda fasalka xiriir wanaagsan?",
+        "Macallinku ma leeyahay aqoon wanaagsan oo ku filan maaddada uu dhigayo?"
+      ]
+    },
+    {
+      key: "qiimeyn",
+      title: "D. Qiimeynta Ardayda iyo Jawaab-celinta",
+      items: [
+        "Macallinku ma qiimeeyaa habdhaqanka, aqoonta, xirfadaha, qiyamka iyo dabeecadaha ardayda inta lagu jiro habka waxbaridda?",
+        "Ardaydu ma helaan jawaab-celin cad oo waqti ku habboon, natiijooyinkana ma loo isticmaalaa taageeridda iyo horumarinta ardayda?",
+        "Ardayda ma la siiyaa talooyin ay ku hagaajinayaan meelaha ay ku liitaan?",
+        "Ardayga ku liita waxbarashada ma lala wadaagaa waalidkiis?",
+        "Qiimeynta macallinku ma ku salaysan tahay natiijooyinka waxbarasho iyo heerarka manhajka?"
+      ]
+    }
   ];
 
-  function avgOf(ev){ return (Number(ev.prep||0)+Number(ev.classroom||0)+Number(ev.assessment||0))/3; }
   function fmt1(n){ return (Math.round(n*10)/10).toFixed(1); }
-  function scoreBadgeClass(avg){ if (avg>=8) return "good"; if (avg>=6) return "warn"; return "bad"; }
-  function scoreLabel(avg){ if (avg>=8) return "Wanaagsan"; if (avg>=6) return "Dhexdhexaad"; return "U baahan taageero"; }
+  function scoreBadgeClass(score){ if (score>=80) return "good"; if (score>=60) return "warn"; return "bad"; }
+  function scoreLabel(score){ if (score>=80) return "Wanaagsan"; if (score>=60) return "Dhexdhexaad"; return "U baahan taageero"; }
   function escapeHtml(s){ return String(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+  function ratingLabel(r){ return r===2?"Haa":r===1?"Qayb ahaan":"Maya"; }
+
+  function categoryScores(ev){
+    const items = ev.items || [];
+    const out = {};
+    CRITERIA_GROUPS.forEach(g=>{
+      const gi = items.filter(it=>it.group===g.key);
+      if (!gi.length){ out[g.key]=null; return; }
+      const sum = gi.reduce((a,it)=>a+Number(it.rating),0);
+      out[g.key] = Math.round((sum/(gi.length*2))*1000)/10;
+    });
+    return out;
+  }
 
   const app = document.getElementById("app");
   const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -85,14 +151,14 @@
 
   function render(teacher, evs){
     evs = evs.slice().sort((a,b)=>new Date(a.date)-new Date(b.date));
-    const overall = evs.length ? evs.reduce((a,e)=>a+avgOf(e),0)/evs.length : null;
-    const latest = evs.length ? avgOf(evs[evs.length-1]) : null;
+    const overall = evs.length ? evs.reduce((a,e)=>a+Number(e.score),0)/evs.length : null;
+    const latest = evs.length ? Number(evs[evs.length-1].score) : null;
 
     app.innerHTML = `
       <div class="card">
         <h2>${escapeHtml(teacher.name)}</h2>
         <div class="sub">${escapeHtml(teacher.subject||"")}</div>
-        ${overall!==null ? `<span class="badge ${scoreBadgeClass(overall)}">Celceliska Guud: ${fmt1(overall)}/10 · ${scoreLabel(overall)}</span>` : `<span class="badge neutral">Wali lama qiimeyn</span>`}
+        ${overall!==null ? `<span class="badge ${scoreBadgeClass(overall)}">Celceliska Guud: ${fmt1(overall)}% · ${scoreLabel(overall)}</span>` : `<span class="badge neutral">Wali lama qiimeyn</span>`}
         ${evs.length<3 ? `<div class="compare-note pending">📌 Waxaad heysaa ${evs.length} qiimeyn. Ugu yaraan 3 ayaa loo baahan yahay si aad si buuxda u aragto isbarbardhigga horumarkaaga.</div>` :
           `<div class="compare-note ok">✅ ${evs.length} qiimeyn ayaad heysaa — jaantuska hoose wuxuu kuu tusayaa horumarkaaga.</div>`}
       </div>
@@ -100,7 +166,7 @@
       ${evs.length ? `
       <div class="stat-grid">
         <div class="stat"><div class="num">${evs.length}</div><div class="lbl">Tirada Qiimeymaha</div></div>
-        <div class="stat"><div class="num">${latest!==null?fmt1(latest):"—"}</div><div class="lbl">Qiimeyntii Ugu Dambeysay /10</div></div>
+        <div class="stat"><div class="num">${latest!==null?fmt1(latest):"—"}%</div><div class="lbl">Qiimeyntii Ugu Dambeysay</div></div>
       </div>` : ""}
 
       ${evs.length>=2 ? `<div class="card"><h2>Horumarkaaga</h2><div class="chart-wrap"><canvas id="chart"></canvas></div></div>` : ""}
@@ -109,15 +175,22 @@
         <h2>Taariikhda Qiimeymaha</h2>
         ${evs.length===0 ? `<div class="empty">Wali lama kuu qiimeynin.</div>` :
         evs.slice().reverse().map(e=>{
-          const a = avgOf(e);
+          const score = Number(e.score);
+          const cs = categoryScores(e);
           return `<div class="eval-item">
-            <div class="row1"><span style="font-weight:700;font-size:.85rem;">${e.date}</span><span class="badge ${scoreBadgeClass(a)}">${fmt1(a)}/10</span></div>
-            <div class="mini-scores">
-              <span>${CRITERIA[0].label}: <b>${e.prep}</b>/10</span>
-              <span>${CRITERIA[1].label}: <b>${e.classroom}</b>/10</span>
-              <span>${CRITERIA[2].label}: <b>${e.assessment}</b>/10</span>
+            <div class="row1"><span style="font-weight:700;font-size:.85rem;">${e.date}</span><span class="badge ${scoreBadgeClass(score)}">${fmt1(score)}%</span></div>
+            <div class="cat-badges">
+              ${CRITERIA_GROUPS.map(g=>`<span class="cat-badge">${g.title.replace(/^[A-D]\.\s*/,'')}: ${cs[g.key]!==null?fmt1(cs[g.key])+'%':'—'}</span>`).join("")}
             </div>
             ${e.notes ? `<div class="notes-txt">📝 ${escapeHtml(e.notes)}</div>` : ""}
+            <details>
+              <summary>Arag faahfaahinta 23-da su'aal</summary>
+              ${(e.items||[]).map(it=>`<div class="qrow">
+                <div class="qtext">${escapeHtml(it.text)}</div>
+                <span class="qtag r${it.rating}">${ratingLabel(it.rating)}</span>
+                ${it.comment ? `<div class="qcomment">💬 ${escapeHtml(it.comment)}</div>` : ""}
+              </div>`).join("")}
+            </details>
           </div>`;
         }).join("")}
       </div>
@@ -128,12 +201,23 @@
       const cssVal = getComputedStyle(document.documentElement);
       const textColor = cssVal.getPropertyValue('--text').trim()||'#333';
       const gridColor = cssVal.getPropertyValue('--border').trim()||'#ddd';
+      const colors = ["#2f7fd1","#1e6f5c","#c98a13","#8e44ad"];
       new Chart(ctx, {
         type:"line",
-        data:{ labels: evs.map(e=>e.date), datasets: CRITERIA.map(c=>({label:c.label,data:evs.map(e=>Number(e[c.key])),borderColor:c.color,backgroundColor:c.color,tension:.3,pointRadius:4})) },
+        data:{
+          labels: evs.map(e=>e.date),
+          datasets: [
+            { label:"Guud", data: evs.map(e=>Number(e.score)), borderColor:"#111", backgroundColor:"#111", tension:.3, pointRadius:4, borderWidth:2 },
+            ...CRITERIA_GROUPS.map((g,i)=>({
+              label: g.title.replace(/^[A-D]\.\s*/,''),
+              data: evs.map(e=>{ const cs=categoryScores(e); return cs[g.key]; }),
+              borderColor: colors[i], backgroundColor: colors[i], tension:.3, pointRadius:3, borderDash:[4,3]
+            }))
+          ]
+        },
         options:{ responsive:true, maintainAspectRatio:false,
-          scales:{ y:{min:0,max:10,ticks:{color:textColor,stepSize:2},grid:{color:gridColor}}, x:{ticks:{color:textColor},grid:{color:gridColor}} },
-          plugins:{ legend:{labels:{color:textColor,boxWidth:12,font:{size:10}}} } }
+          scales:{ y:{min:0,max:100,ticks:{color:textColor,stepSize:20},grid:{color:gridColor}}, x:{ticks:{color:textColor},grid:{color:gridColor}} },
+          plugins:{ legend:{labels:{color:textColor,boxWidth:10,font:{size:9}}} } }
       });
     }
   }

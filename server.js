@@ -44,6 +44,11 @@ async function initDb() {
   // make sure the new columns exist too.
   await pool.query(`ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'`);
   await pool.query(`ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS score NUMERIC NOT NULL DEFAULT 0`);
+  // Drop obsolete columns from the old 3-field schema (prep/classroom/assessment)
+  // so inserts using the new "items" JSONB column don't fail on NOT NULL.
+  await pool.query(`ALTER TABLE evaluations DROP COLUMN IF EXISTS prep`);
+  await pool.query(`ALTER TABLE evaluations DROP COLUMN IF EXISTS classroom`);
+  await pool.query(`ALTER TABLE evaluations DROP COLUMN IF EXISTS assessment`);
   console.log("✅ Database ready");
 }
 initDb().catch((e) => console.error("DB init error:", e));

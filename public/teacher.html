@@ -24,18 +24,15 @@
   main { padding:14px; max-width:700px; margin:0 auto; }
   .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px; box-shadow:var(--shadow); }
   .card h2 { margin:0 0 4px; font-size:1.1rem; }
-  .card h3 { margin:0 0 8px; font-size:.9rem; }
   .sub { color:var(--text-dim); font-size:.85rem; margin-bottom:10px; }
   .badge { display:inline-block; padding:4px 12px; border-radius:20px; font-size:.85rem; font-weight:700; color:#fff; }
   .badge.good { background:var(--good); } .badge.warn { background:var(--warn); } .badge.bad { background:var(--bad); } .badge.neutral { background:var(--text-dim); }
   .compare-note { font-size:.85rem; padding:10px 12px; border-radius:10px; margin-top:12px; }
   .compare-note.ok { background:rgba(30,142,90,.12); color:var(--good); }
   .compare-note.pending { background:rgba(201,138,19,.12); color:var(--warn); }
-  .chart-wrap { position:relative; height:240px; margin-top:14px; }
+  .chart-wrap { position:relative; height:220px; margin-top:14px; }
   .eval-item { border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:10px; background:var(--surface-2); }
   .eval-item .row1 { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
-  .cat-badges { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
-  .cat-badge { font-size:.72rem; padding:3px 9px; border-radius:12px; background:var(--surface); border:1px solid var(--border); color:var(--text-dim); }
   .notes-txt { font-size:.83rem; color:var(--text-dim); margin-top:6px; white-space:pre-wrap; }
   .empty, .loading { text-align:center; padding:40px 10px; color:var(--text-dim); }
   .stat-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:14px; }
@@ -44,12 +41,15 @@
   .stat .lbl { font-size:.72rem; color:var(--text-dim); }
   details { margin-top:8px; }
   summary { font-size:.8rem; color:var(--primary); cursor:pointer; font-weight:600; }
-  .qrow { padding:8px 0; border-bottom:1px solid var(--border); font-size:.82rem; }
+  .qrow { padding:9px 0; border-bottom:1px solid var(--border); font-size:.82rem; }
   .qrow:last-child { border-bottom:none; }
-  .qrow .qtext { margin-bottom:4px; }
-  .qtag { display:inline-block; font-size:.7rem; font-weight:700; padding:2px 8px; border-radius:10px; color:#fff; }
-  .qtag.r2 { background:var(--good); } .qtag.r1 { background:var(--warn); } .qtag.r0 { background:var(--bad); }
-  .qcomment { color:var(--text-dim); font-size:.78rem; margin-top:3px; }
+  .qrow .qtitle { font-weight:700; margin-bottom:3px; }
+  .qtag { display:inline-block; font-size:.72rem; font-weight:800; padding:2px 9px; border-radius:10px; color:#fff; }
+  .qtag.r5 { background:var(--good); } .qtag.r4 { background:#5aa96d; } .qtag.r3 { background:var(--warn); }
+  .qtag.r2 { background:#d98a4c; } .qtag.r1 { background:var(--bad); }
+  .qcomment { color:var(--text-dim); font-size:.78rem; margin-top:4px; }
+  .meta-block { font-size:.82rem; margin-top:6px; }
+  .meta-block b { display:block; margin-top:8px; font-size:.78rem; color:var(--text-dim); }
 </style>
 </head>
 <body>
@@ -64,73 +64,16 @@
 (function(){
   "use strict";
 
-  const CRITERIA_GROUPS = [
-    {
-      key: "manhaj",
-      title: "A. Fulinta Manhajka",
-      items: [
-        "Macallinku si sax ah ma u adeegsadaa Muqarrarka (Syllabus)?",
-        "Macallinku ma leeyahay aqoon iyo tababar ku filan oo ku saabsan fulinta manhajka?",
-        "Macallinku ma haystaa nuqul ansaxsan oo Qorshe-wadeedka (Scheme of Work) ah?"
-      ]
-    },
-    {
-      key: "diyaarin",
-      title: "B. Howlaha Cashar Diyaarinta",
-      items: [
-        "Macallinku ma leeyahay Qorshe Shaqo iyo Cashar-diyaarin (Lesson Plan) oo laga soo saaray manhajka qaranka?",
-        "Macallinku ma haystaa agabka waxbarashada ee loo baahan yahay, sida buugga hagaha macallinka?",
-        "Macallinku ma aqoonsadaa kartida, waaya-aragnimada iyo xirfadaha ardayda, wuxuuna ma ku xiraa casharka cusub casharradii hore?",
-        "Macallinku ma adeegsadaa hababka wax-dhigidda isaga oo tixgelinaya kala duwanaanshaha da'da iyo kartida ardayda?",
-        "Macallinku ma hubiyaa fahamka ardayga inta casharku socdo?",
-        "Ardaydu ma si firfircoon ayay uga qaybqaataan casharka?"
-      ]
-    },
-    {
-      key: "fasal",
-      title: "C. Maareynta Fasalka",
-      items: [
-        "Fasalku ma yahay mid ku habboon baridda iyo barashada?",
-        "Macallinku ma adeegsadaa xeelado edbin togan si uu u maareeyo fasalka?",
-        "Macallinku ma raacaa habraaca ilaalinta ardayda iyo heerka anshaxa?",
-        "Macallinku ma sameeyaa socsocod gudaha fasalka ah si uu ula socdo dhaqdhaqaaqa ardayda (Class Movement/Eye Contact)?",
-        "Macallinku ma ixtiraamaa ardayda, qof kastana ma siiyaa fursad siman oo uu wax ku barto?",
-        "Macallinku ma xaadiriyaa ardayda bilowga iyo dhammaadka xiisadda?",
-        "Macallinku ma kor u qaadaa xiisaha iyo dhiirigelinta ardayda, isagoo hordhaca casharka ka dhigaya mid xiiso leh oo soo jiidasho leh?",
-        "Macallinku ma la sameeyaa dhammaan ardayda fasalka xiriir wanaagsan?",
-        "Macallinku ma leeyahay aqoon wanaagsan oo ku filan maaddada uu dhigayo?"
-      ]
-    },
-    {
-      key: "qiimeyn",
-      title: "D. Qiimeynta Ardayda iyo Jawaab-celinta",
-      items: [
-        "Macallinku ma qiimeeyaa habdhaqanka, aqoonta, xirfadaha, qiyamka iyo dabeecadaha ardayda inta lagu jiro habka waxbaridda?",
-        "Ardaydu ma helaan jawaab-celin cad oo waqti ku habboon, natiijooyinkana ma loo isticmaalaa taageeridda iyo horumarinta ardayda?",
-        "Ardayda ma la siiyaa talooyin ay ku hagaajinayaan meelaha ay ku liitaan?",
-        "Ardayga ku liita waxbarashada ma lala wadaagaa waalidkiis?",
-        "Qiimeynta macallinku ma ku salaysan tahay natiijooyinka waxbarasho iyo heerarka manhajka?"
-      ]
-    }
-  ];
-
   function fmt1(n){ return (Math.round(n*10)/10).toFixed(1); }
-  function scoreBadgeClass(score){ if (score>=80) return "good"; if (score>=60) return "warn"; return "bad"; }
-  function scoreLabel(score){ if (score>=80) return "Wanaagsan"; if (score>=60) return "Dhexdhexaad"; return "U baahan taageero"; }
-  function escapeHtml(s){ return String(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
-  function ratingLabel(r){ return r===2?"Haa":r===1?"Qayb ahaan":"Maya"; }
-
-  function categoryScores(ev){
-    const items = ev.items || [];
-    const out = {};
-    CRITERIA_GROUPS.forEach(g=>{
-      const gi = items.filter(it=>it.group===g.key);
-      if (!gi.length){ out[g.key]=null; return; }
-      const sum = gi.reduce((a,it)=>a+Number(it.rating),0);
-      out[g.key] = Math.round((sum/(gi.length*2))*1000)/10;
-    });
-    return out;
+  function overallLevel(pct){
+    if (pct>=90) return "Heer Sare";
+    if (pct>=70) return "Wanaagsan";
+    if (pct>=50) return "La Aqbali Karo";
+    if (pct>=30) return "U Baahan Horumarin";
+    return "U Baahan Taageero Degdeg ah";
   }
+  function scoreBadgeClass(pct){ if (pct>=70) return "good"; if (pct>=50) return "warn"; return "bad"; }
+  function escapeHtml(s){ return String(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
 
   const app = document.getElementById("app");
   const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -158,7 +101,7 @@
       <div class="card">
         <h2>${escapeHtml(teacher.name)}</h2>
         <div class="sub">${escapeHtml(teacher.subject||"")}</div>
-        ${overall!==null ? `<span class="badge ${scoreBadgeClass(overall)}">Celceliska Guud: ${fmt1(overall)}% · ${scoreLabel(overall)}</span>` : `<span class="badge neutral">Wali lama qiimeyn</span>`}
+        ${overall!==null ? `<span class="badge ${scoreBadgeClass(overall)}">Celceliska Guud: ${fmt1(overall)}% · ${overallLevel(overall)}</span>` : `<span class="badge neutral">Wali lama qiimeyn</span>`}
         ${evs.length<3 ? `<div class="compare-note pending">📌 Waxaad heysaa ${evs.length} qiimeyn. Ugu yaraan 3 ayaa loo baahan yahay si aad si buuxda u aragto isbarbardhigga horumarkaaga.</div>` :
           `<div class="compare-note ok">✅ ${evs.length} qiimeyn ayaad heysaa — jaantuska hoose wuxuu kuu tusayaa horumarkaaga.</div>`}
       </div>
@@ -176,20 +119,29 @@
         ${evs.length===0 ? `<div class="empty">Wali lama kuu qiimeynin.</div>` :
         evs.slice().reverse().map(e=>{
           const score = Number(e.score);
-          const cs = categoryScores(e);
+          const m = e.meta || {};
           return `<div class="eval-item">
-            <div class="row1"><span style="font-weight:700;font-size:.85rem;">${e.date}</span><span class="badge ${scoreBadgeClass(score)}">${fmt1(score)}%</span></div>
-            <div class="cat-badges">
-              ${CRITERIA_GROUPS.map(g=>`<span class="cat-badge">${g.title.replace(/^[A-D]\.\s*/,'')}: ${cs[g.key]!==null?fmt1(cs[g.key])+'%':'—'}</span>`).join("")}
-            </div>
-            ${e.notes ? `<div class="notes-txt">📝 ${escapeHtml(e.notes)}</div>` : ""}
+            <div class="row1"><span style="font-weight:700;font-size:.85rem;">${e.date}${m.class?` · ${escapeHtml(m.class)}`:""}</span><span class="badge ${scoreBadgeClass(score)}">${fmt1(score)}%</span></div>
+            <div class="notes-txt">${overallLevel(score)}${m.supervisorName?` · Kormeere: ${escapeHtml(m.supervisorName)}`:""}</div>
             <details>
-              <summary>Arag faahfaahinta 23-da su'aal</summary>
+              <summary>Arag faahfaahinta 10-da su'aal</summary>
               ${(e.items||[]).map(it=>`<div class="qrow">
-                <div class="qtext">${escapeHtml(it.text)}</div>
-                <span class="qtag r${it.rating}">${ratingLabel(it.rating)}</span>
+                <div class="qtitle">${escapeHtml(it.title)}</div>
+                <div style="margin-bottom:4px;color:var(--text-dim);">${escapeHtml(it.text)}</div>
+                <span class="qtag r${it.rating}">${it.rating}/5</span>
                 ${it.comment ? `<div class="qcomment">💬 ${escapeHtml(it.comment)}</div>` : ""}
               </div>`).join("")}
+              ${(m.strengths||m.improvements||m.recommendations) ? `<div class="meta-block">
+                ${m.strengths?`<b>Waxyaabaha wanaagsan:</b>${escapeHtml(m.strengths)}`:""}
+                ${m.improvements?`<b>U baahan horumarinta:</b>${escapeHtml(m.improvements)}`:""}
+                ${m.recommendations?`<b>Talooyinka Kormeeraha:</b>${escapeHtml(m.recommendations)}`:""}
+              </div>`:""}
+              ${(m.followupArea||m.followupAction||m.followupDate) ? `<div class="meta-block">
+                <b>Qorshaha Dabagalka:</b>
+                ${m.followupArea?`Meesha: ${escapeHtml(m.followupArea)}<br>`:""}
+                ${m.followupAction?`Tallaabada: ${escapeHtml(m.followupAction)}<br>`:""}
+                ${m.followupDate?`Waqtiga: ${escapeHtml(m.followupDate)}`:""}
+              </div>`:""}
             </details>
           </div>`;
         }).join("")}
@@ -201,23 +153,17 @@
       const cssVal = getComputedStyle(document.documentElement);
       const textColor = cssVal.getPropertyValue('--text').trim()||'#333';
       const gridColor = cssVal.getPropertyValue('--border').trim()||'#ddd';
-      const colors = ["#2f7fd1","#1e6f5c","#c98a13","#8e44ad"];
       new Chart(ctx, {
         type:"line",
         data:{
           labels: evs.map(e=>e.date),
           datasets: [
-            { label:"Guud", data: evs.map(e=>Number(e.score)), borderColor:"#111", backgroundColor:"#111", tension:.3, pointRadius:4, borderWidth:2 },
-            ...CRITERIA_GROUPS.map((g,i)=>({
-              label: g.title.replace(/^[A-D]\.\s*/,''),
-              data: evs.map(e=>{ const cs=categoryScores(e); return cs[g.key]; }),
-              borderColor: colors[i], backgroundColor: colors[i], tension:.3, pointRadius:3, borderDash:[4,3]
-            }))
+            { label:"Celceliska Guud (%)", data: evs.map(e=>Number(e.score)), borderColor:"#1e6f5c", backgroundColor:"#1e6f5c", tension:.3, pointRadius:4, borderWidth:2 }
           ]
         },
         options:{ responsive:true, maintainAspectRatio:false,
           scales:{ y:{min:0,max:100,ticks:{color:textColor,stepSize:20},grid:{color:gridColor}}, x:{ticks:{color:textColor},grid:{color:gridColor}} },
-          plugins:{ legend:{labels:{color:textColor,boxWidth:10,font:{size:9}}} } }
+          plugins:{ legend:{labels:{color:textColor,boxWidth:10,font:{size:10}}} } }
       });
     }
   }

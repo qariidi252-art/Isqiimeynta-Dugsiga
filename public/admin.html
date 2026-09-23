@@ -36,11 +36,9 @@
     width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:.95rem; font-family:inherit;
   }
   textarea { resize:vertical; min-height:60px; }
-  .range-row { display:flex; align-items:center; gap:10px; }
-  input[type=range] { flex:1; accent-color:var(--primary); }
-  .range-val { min-width:30px; text-align:center; font-weight:800; color:var(--primary); }
   .btn { display:inline-block; background:var(--primary); color:#fff; border:none; padding:11px 18px; border-radius:10px; font-weight:700; font-size:.9rem; cursor:pointer; margin-top:12px; }
   .btn.secondary { background:var(--surface-2); color:var(--text); border:1px solid var(--border); }
+  .btn:disabled { opacity:.5; }
   .teacher-row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:12px 4px; border-bottom:1px solid var(--border); }
   .teacher-row:last-child { border-bottom:none; }
   .teacher-row .name { font-weight:700; cursor:pointer; }
@@ -51,8 +49,6 @@
   .backbtn { background:none; border:none; color:var(--accent); font-weight:700; font-size:.85rem; padding:0 0 10px; cursor:pointer; }
   .eval-item { border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:10px; background:var(--surface-2); }
   .eval-item .row1 { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
-  .mini-scores { display:flex; gap:10px; flex-wrap:wrap; font-size:.78rem; color:var(--text-dim); }
-  .mini-scores b { color:var(--text); }
   .notes-txt { font-size:.82rem; color:var(--text-dim); margin-top:6px; white-space:pre-wrap; }
   .chart-wrap { position:relative; height:220px; margin-top:8px; }
   .compare-note { font-size:.8rem; padding:10px 12px; border-radius:10px; margin-top:10px; }
@@ -63,6 +59,29 @@
   .link-box { display:flex; gap:6px; align-items:center; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:8px 10px; margin-top:8px; font-size:.78rem; word-break:break-all; }
   .link-box button { flex:0 0 auto; }
   #loginScreen { max-width:340px; margin:60px auto; text-align:center; }
+
+  /* Group / checklist styles */
+  .group { border:1px solid var(--border); border-radius:14px; margin-bottom:12px; overflow:hidden; background:var(--surface); }
+  .group-head { display:flex; justify-content:space-between; align-items:center; padding:12px 14px; cursor:pointer; background:var(--surface-2); }
+  .group-head h3 { margin:0; font-size:.9rem; }
+  .group-progress { font-size:.75rem; color:var(--text-dim); font-weight:700; }
+  .group-body { padding:10px 14px; display:none; }
+  .group.open .group-body { display:block; }
+  .group.open .chev { transform:rotate(180deg); }
+  .chev { transition:.15s; font-size:.8rem; color:var(--text-dim); }
+  .qitem { padding:12px 0; border-bottom:1px solid var(--border); }
+  .qitem:last-child { border-bottom:none; }
+  .qitem-text { font-size:.85rem; margin-bottom:8px; line-height:1.4; }
+  .rate-row { display:flex; gap:6px; margin-bottom:6px; }
+  .rate-btn { flex:1; padding:8px 4px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:.78rem; font-weight:700; cursor:pointer; text-align:center; }
+  .rate-btn[data-r="2"].sel { background:var(--good); border-color:var(--good); color:#fff; }
+  .rate-btn[data-r="1"].sel { background:var(--warn); border-color:var(--warn); color:#fff; }
+  .rate-btn[data-r="0"].sel { background:var(--bad); border-color:var(--bad); color:#fff; }
+  .qitem-comment { width:100%; padding:7px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:.8rem; }
+  .progress-bar-wrap { background:var(--surface-2); border-radius:20px; height:8px; overflow:hidden; margin:8px 0 14px; }
+  .progress-bar { background:var(--primary); height:100%; transition:width .2s; }
+  .cat-badges { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .cat-badge { font-size:.72rem; padding:3px 9px; border-radius:12px; background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); }
 </style>
 </head>
 <body>
@@ -94,11 +113,58 @@
 <script>
 (function(){
   "use strict";
-  const CRITERIA = [
-    { key:"prep", label:"Cashardiyaarinta", full:"Cashardiyaarinta (waafaqsan jadwalka Xafiiska Waxbarashada)", color:"#2f7fd1" },
-    { key:"classroom", label:"Maareynta Fasalka", full:"Maareynta Fasalka (Class Management)", color:"#1e6f5c" },
-    { key:"assessment", label:"Qiimeynta Ardayda", full:"Qiimeynta Ardayda", color:"#c98a13" }
+
+  // ---------- Evaluation criteria (4 groups, 23 items total) ----------
+  const CRITERIA_GROUPS = [
+    {
+      key: "manhaj",
+      title: "A. Fulinta Manhajka",
+      items: [
+        "Macallinku si sax ah ma u adeegsadaa Muqarrarka (Syllabus)?",
+        "Macallinku ma leeyahay aqoon iyo tababar ku filan oo ku saabsan fulinta manhajka?",
+        "Macallinku ma haystaa nuqul ansaxsan oo Qorshe-wadeedka (Scheme of Work) ah?"
+      ]
+    },
+    {
+      key: "diyaarin",
+      title: "B. Howlaha Cashar Diyaarinta",
+      items: [
+        "Macallinku ma leeyahay Qorshe Shaqo iyo Cashar-diyaarin (Lesson Plan) oo laga soo saaray manhajka qaranka?",
+        "Macallinku ma haystaa agabka waxbarashada ee loo baahan yahay, sida buugga hagaha macallinka?",
+        "Macallinku ma aqoonsadaa kartida, waaya-aragnimada iyo xirfadaha ardayda, wuxuuna ma ku xiraa casharka cusub casharradii hore?",
+        "Macallinku ma adeegsadaa hababka wax-dhigidda isaga oo tixgelinaya kala duwanaanshaha da'da iyo kartida ardayda?",
+        "Macallinku ma hubiyaa fahamka ardayga inta casharku socdo?",
+        "Ardaydu ma si firfircoon ayay uga qaybqaataan casharka?"
+      ]
+    },
+    {
+      key: "fasal",
+      title: "C. Maareynta Fasalka",
+      items: [
+        "Fasalku ma yahay mid ku habboon baridda iyo barashada?",
+        "Macallinku ma adeegsadaa xeelado edbin togan si uu u maareeyo fasalka?",
+        "Macallinku ma raacaa habraaca ilaalinta ardayda iyo heerka anshaxa?",
+        "Macallinku ma sameeyaa socsocod gudaha fasalka ah si uu ula socdo dhaqdhaqaaqa ardayda (Class Movement/Eye Contact)?",
+        "Macallinku ma ixtiraamaa ardayda, qof kastana ma siiyaa fursad siman oo uu wax ku barto?",
+        "Macallinku ma xaadiriyaa ardayda bilowga iyo dhammaadka xiisadda?",
+        "Macallinku ma kor u qaadaa xiisaha iyo dhiirigelinta ardayda, isagoo hordhaca casharka ka dhigaya mid xiiso leh oo soo jiidasho leh?",
+        "Macallinku ma la sameeyaa dhammaan ardayda fasalka xiriir wanaagsan?",
+        "Macallinku ma leeyahay aqoon wanaagsan oo ku filan maaddada uu dhigayo?"
+      ]
+    },
+    {
+      key: "qiimeyn",
+      title: "D. Qiimeynta Ardayda iyo Jawaab-celinta",
+      items: [
+        "Macallinku ma qiimeeyaa habdhaqanka, aqoonta, xirfadaha, qiyamka iyo dabeecadaha ardayda inta lagu jiro habka waxbaridda?",
+        "Ardaydu ma helaan jawaab-celin cad oo waqti ku habboon, natiijooyinkana ma loo isticmaalaa taageeridda iyo horumarinta ardayda?",
+        "Ardayda ma la siiyaa talooyin ay ku hagaajinayaan meelaha ay ku liitaan?",
+        "Ardayga ku liita waxbarashada ma lala wadaagaa waalidkiis?",
+        "Qiimeynta macallinku ma ku salaysan tahay natiijooyinka waxbarasho iyo heerarka manhajka?"
+      ]
+    }
   ];
+  const TOTAL_ITEMS = CRITERIA_GROUPS.reduce((a,g)=>a+g.items.length,0);
 
   let teachers = [];
   let evaluations = [];
@@ -106,6 +172,8 @@
   let activeTab = "dashboard";
   let preselectTeacher = null;
   let chartInstance = null;
+  let evalState = {}; // itemKey -> {rating, comment}
+  let openGroups = {}; // groupKey -> bool
 
   const app = document.getElementById("app");
   const PW_KEY = "qm_admin_pw";
@@ -170,25 +238,39 @@
     } catch(e){ showLogin("Khalad xidhiidh server ah."); }
   }
 
-  function uid(){ return "id"+Date.now()+Math.random().toString(36).slice(2,8); }
-  function avgOf(ev){ return (Number(ev.prep||0)+Number(ev.classroom||0)+Number(ev.assessment||0))/3; }
   function fmt1(n){ return (Math.round(n*10)/10).toFixed(1); }
-  function scoreBadgeClass(avg){ if (avg>=8) return "good"; if (avg>=6) return "warn"; return "bad"; }
-  function scoreLabel(avg){ if (avg>=8) return "Wanaagsan"; if (avg>=6) return "Dhexdhexaad"; return "U baahan taageero"; }
+  function scoreBadgeClass(score){ if (score>=80) return "good"; if (score>=60) return "warn"; return "bad"; }
+  function scoreLabel(score){ if (score>=80) return "Wanaagsan"; if (score>=60) return "Dhexdhexaad"; return "U baahan taageero"; }
   function teacherEvals(id){ return evaluations.filter(e=>e.teacher_id===id).sort((a,b)=>new Date(a.date)-new Date(b.date)); }
-  function teacherLatestAvg(id){ const e=teacherEvals(id); return e.length? avgOf(e[e.length-1]) : null; }
-  function teacherOverallAvg(id){ const e=teacherEvals(id); if(!e.length) return null; return e.reduce((a,x)=>a+avgOf(x),0)/e.length; }
+  function teacherLatestScore(id){ const e=teacherEvals(id); return e.length? Number(e[e.length-1].score) : null; }
+  function teacherOverallScore(id){ const e=teacherEvals(id); if(!e.length) return null; return e.reduce((a,x)=>a+Number(x.score),0)/e.length; }
   function escapeHtml(s){ return String(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+
+  // Category sub-score for one evaluation: returns {groupKey: pct}
+  function categoryScores(ev){
+    const items = ev.items || [];
+    const out = {};
+    CRITERIA_GROUPS.forEach(g=>{
+      const gi = items.filter(it=>it.group===g.key);
+      if (!gi.length){ out[g.key]=null; return; }
+      const sum = gi.reduce((a,it)=>a+Number(it.rating),0);
+      out[g.key] = Math.round((sum/(gi.length*2))*1000)/10;
+    });
+    return out;
+  }
 
   async function addTeacher(name, subject){
     const t = await api("/api/teachers", { method:"POST", body: JSON.stringify({name, subject}) });
     await loadAll();
     return t;
   }
-  async function deleteTeacher(id){ await api("/api/teachers/"+id, { method:"DELETE" }); if (currentTeacherId===id) currentTeacherId=null; await loadAll(); }
-  async function addEvaluation(teacherId, date, prep, classroom, assessment, notes){
-    await api("/api/evaluations", { method:"POST", body: JSON.stringify({teacherId, date, prep, classroom, assessment, notes}) });
+  async function addTeachersBulk(names){
+    await api("/api/teachers/bulk", { method:"POST", body: JSON.stringify({names}) });
     await loadAll();
+  }
+  async function deleteTeacher(id){ await api("/api/teachers/"+id, { method:"DELETE" }); if (currentTeacherId===id) currentTeacherId=null; await loadAll(); }
+  async function addEvaluation(teacherId, date, items, notes){
+    return await api("/api/evaluations", { method:"POST", body: JSON.stringify({teacherId, date, items, notes}) });
   }
   async function deleteEvaluation(id){ await api("/api/evaluations/"+id, { method:"DELETE" }); await loadAll(); }
 
@@ -201,15 +283,15 @@
   function renderDashboard(){
     const totalTeachers = teachers.length;
     const totalEvals = evaluations.length;
-    const overallAvg = totalEvals ? fmt1(evaluations.reduce((a,e)=>a+avgOf(e),0)/totalEvals) : "—";
-    const needAttention = teachers.filter(t=>{ const a=teacherLatestAvg(t.id); return a!==null && a<6; }).length;
+    const overallScore = totalEvals ? fmt1(evaluations.reduce((a,e)=>a+Number(e.score),0)/totalEvals) : "—";
+    const needAttention = teachers.filter(t=>{ const s=teacherLatestScore(t.id); return s!==null && s<60; }).length;
 
     let rows = teachers.map(t=>{
       const evs = teacherEvals(t.id);
-      const latest = evs.length ? avgOf(evs[evs.length-1]) : null;
-      const prev = evs.length>1 ? avgOf(evs[evs.length-2]) : null;
+      const latest = evs.length ? Number(evs[evs.length-1].score) : null;
+      const prev = evs.length>1 ? Number(evs[evs.length-2].score) : null;
       let trend = "";
-      if (latest!==null && prev!==null){ trend = latest>prev+0.05?"▲":latest<prev-0.05?"▼":"▬"; }
+      if (latest!==null && prev!==null){ trend = latest>prev+0.5?"▲":latest<prev-0.5?"▼":"▬"; }
       return { t, evs, latest, trend };
     }).sort((a,b)=>{
       if (a.latest===null && b.latest===null) return 0;
@@ -222,14 +304,14 @@
       <div class="stat-grid">
         <div class="stat"><div class="num">${totalTeachers}</div><div class="lbl">Macallimiin</div></div>
         <div class="stat"><div class="num">${totalEvals}</div><div class="lbl">Qiimeymo Guud</div></div>
-        <div class="stat"><div class="num">${overallAvg}</div><div class="lbl">Celceliska Guud /10</div></div>
+        <div class="stat"><div class="num">${overallScore}%</div><div class="lbl">Celceliska Guud</div></div>
         <div class="stat"><div class="num" style="color:${needAttention?'var(--bad)':'var(--good)'}">${needAttention}</div><div class="lbl">U Baahan Taageero</div></div>
       </div>
       <div class="card">
         <h2>Liiska Macallimiinta</h2>
         ${rows.length===0 ? `<div class="empty">Wali macallin lama gelin.</div>` :
         rows.map(r=>{
-          const badge = r.latest===null ? `<span class="badge neutral">Wali lama qiimeyn</span>` : `<span class="badge ${scoreBadgeClass(r.latest)}">${fmt1(r.latest)}/10 ${r.trend}</span>`;
+          const badge = r.latest===null ? `<span class="badge neutral">Wali lama qiimeyn</span>` : `<span class="badge ${scoreBadgeClass(r.latest)}">${fmt1(r.latest)}% ${r.trend}</span>`;
           return `<div class="teacher-row" data-open="${r.t.id}" style="cursor:pointer;">
             <div><div class="name">${escapeHtml(r.t.name)}</div><div class="sub">${escapeHtml(r.t.subject||"")} · ${r.evs.length} qiimeyn</div></div>
             ${badge}
@@ -258,18 +340,24 @@
         <button class="btn" id="btnAddTeacher">➕ Ku Dar Macallin</button>
       </div>
       <div class="card">
+        <h2>Ku dar Dhowr Macallin Mar Hal Ah</h2>
+        <label>Magacyada (mid kasta xariiq gooni ah)</label>
+        <textarea id="bulkNames" placeholder="Xasan Cali Maxamed&#10;Faadumo Axmed Nuur&#10;Cabdi Xasan Warsame&#10;..." style="min-height:120px;"></textarea>
+        <button class="btn secondary" id="btnBulkAdd">📋 Ku Dar Dhammaan</button>
+      </div>
+      <div class="card">
         <h2>Dhammaan Macallimiinta (${teachers.length})</h2>
         ${teachers.length===0 ? `<div class="empty">Wali macallin lama gelin.</div>` :
         teachers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(t=>{
           const evs = teacherEvals(t.id);
-          const overall = teacherOverallAvg(t.id);
+          const overall = teacherOverallScore(t.id);
           return `<div class="teacher-row">
             <div style="cursor:pointer;" data-open="${t.id}">
               <div class="name">${escapeHtml(t.name)}</div>
               <div class="sub">${escapeHtml(t.subject||"")} · ${evs.length} qiimeyn</div>
             </div>
             <div style="display:flex;align-items:center;gap:6px;">
-              ${overall!==null ? `<span class="badge ${scoreBadgeClass(overall)}">${fmt1(overall)}/10</span>` : `<span class="badge neutral">—</span>`}
+              ${overall!==null ? `<span class="badge ${scoreBadgeClass(overall)}">${fmt1(overall)}%</span>` : `<span class="badge neutral">—</span>`}
               <button class="del-x" data-del="${t.id}" title="Tirtir">✕</button>
             </div>
           </div>`;
@@ -282,6 +370,13 @@
       if (!name.trim()){ alert("Fadlan geli magaca macallinka."); return; }
       const btn = document.getElementById("btnAddTeacher"); btn.disabled = true;
       try { await addTeacher(name, subject); } finally { btn.disabled = false; }
+    });
+    document.getElementById("btnBulkAdd").addEventListener("click", async ()=>{
+      const raw = document.getElementById("bulkNames").value;
+      const names = raw.split("\n").map(s=>s.trim()).filter(Boolean);
+      if (!names.length){ alert("Fadlan geli ugu yaraan hal magac."); return; }
+      const btn = document.getElementById("btnBulkAdd"); btn.disabled = true; btn.textContent = "Gelinaya...";
+      try { await addTeachersBulk(names); } finally { btn.disabled = false; btn.textContent = "📋 Ku Dar Dhammaan"; }
     });
     app.querySelectorAll("[data-open]").forEach(el=>{
       el.addEventListener("click", ()=>{ currentTeacherId = el.dataset.open; render(); });
@@ -299,7 +394,7 @@
     const t = teachers.find(x=>x.id===teacherId);
     if (!t){ currentTeacherId=null; return renderTeachers(); }
     const evs = teacherEvals(teacherId);
-    const overall = teacherOverallAvg(teacherId);
+    const overall = teacherOverallScore(teacherId);
     const link = window.location.origin + "/t/" + t.token;
 
     app.innerHTML = `
@@ -307,7 +402,7 @@
       <div class="card">
         <h2>${escapeHtml(t.name)}</h2>
         <div class="sub" style="color:var(--text-dim);margin-bottom:8px;">${escapeHtml(t.subject||"")}</div>
-        ${overall!==null ? `<span class="badge ${scoreBadgeClass(overall)}">Celceliska Guud: ${fmt1(overall)}/10 · ${scoreLabel(overall)}</span>` : `<span class="badge neutral">Wali lama qiimeyn</span>`}
+        ${overall!==null ? `<span class="badge ${scoreBadgeClass(overall)}">Celceliska Guud: ${fmt1(overall)}% · ${scoreLabel(overall)}</span>` : `<span class="badge neutral">Wali lama qiimeyn</span>`}
         ${evs.length>=2 ? `<div class="chart-wrap"><canvas id="teacherChart"></canvas></div>` : ""}
         ${evs.length<3 ? `<div class="compare-note pending">📌 Waxaad heysaa ${evs.length} qiimeyn. Ugu yaraan 3 ayaa loo baahan yahay si loo isbarbardhigo horumarka.</div>` : `<div class="compare-note ok">✅ ${evs.length} qiimeyn — waad isbarbardhigi kartaa horumarka.</div>`}
         <label>🔗 Link-ga macallinku uu ula socon karo xogtiisa (u dir isaga)</label>
@@ -317,17 +412,17 @@
         <h2>Taariikhda Qiimeymaha (${evs.length})</h2>
         ${evs.length===0 ? `<div class="empty">Macallinkan wali lama qiimeynin.</div>` :
         evs.slice().reverse().map(e=>{
-          const a = avgOf(e);
+          const cs = categoryScores(e);
+          const withComments = (e.items||[]).filter(it=>it.comment);
           return `<div class="eval-item">
             <div class="row1"><span style="font-weight:700;font-size:.85rem;">${e.date}</span>
-              <span style="display:flex;align-items:center;gap:6px;"><span class="badge ${scoreBadgeClass(a)}">${fmt1(a)}/10</span><button class="del-x" data-delev="${e.id}">✕</button></span>
+              <span style="display:flex;align-items:center;gap:6px;"><span class="badge ${scoreBadgeClass(Number(e.score))}">${fmt1(Number(e.score))}%</span><button class="del-x" data-delev="${e.id}">✕</button></span>
             </div>
-            <div class="mini-scores">
-              <span>${CRITERIA[0].label}: <b>${e.prep}</b>/10</span>
-              <span>${CRITERIA[1].label}: <b>${e.classroom}</b>/10</span>
-              <span>${CRITERIA[2].label}: <b>${e.assessment}</b>/10</span>
+            <div class="cat-badges">
+              ${CRITERIA_GROUPS.map(g=>`<span class="cat-badge">${g.title.replace(/^[A-D]\.\s*/,'')}: ${cs[g.key]!==null?fmt1(cs[g.key])+'%':'—'}</span>`).join("")}
             </div>
             ${e.notes ? `<div class="notes-txt">📝 ${escapeHtml(e.notes)}</div>` : ""}
+            ${withComments.length ? `<div class="notes-txt">💬 ${withComments.length} faallo su'aal gaar ah — <a href="#" data-viewdetail="${e.id}" style="color:var(--accent);">arag faahfaahin</a></div>` : ""}
           </div>`;
         }).join("")}
       </div>
@@ -349,6 +444,16 @@
     app.querySelectorAll("[data-delev]").forEach(el=>{
       el.addEventListener("click", async ()=>{ if (confirm("Ma hubtaa inaad tirtirto qiimeyntan?")) await deleteEvaluation(el.dataset.delev); });
     });
+    app.querySelectorAll("[data-viewdetail]").forEach(el=>{
+      el.addEventListener("click", (ev)=>{
+        ev.preventDefault();
+        const evalId = el.dataset.viewdetail;
+        const evalObj = evs.find(x=>x.id===evalId);
+        if (!evalObj) return;
+        const lines = (evalObj.items||[]).filter(it=>it.comment).map(it=>`• ${it.text}\n  → ${it.comment}`).join("\n\n");
+        alert("Faallooyinka " + evalObj.date + ":\n\n" + (lines || "Ma jiraan faallooyin."));
+      });
+    });
 
     if (evs.length>=2 && window.Chart){
       const ctx = document.getElementById("teacherChart");
@@ -356,22 +461,45 @@
       const cssVal = getComputedStyle(document.documentElement);
       const textColor = cssVal.getPropertyValue('--text').trim()||'#333';
       const gridColor = cssVal.getPropertyValue('--border').trim()||'#ddd';
+      const colors = ["#2f7fd1","#1e6f5c","#c98a13","#8e44ad"];
       chartInstance = new Chart(ctx, {
         type:"line",
-        data:{ labels: evs.map(e=>e.date), datasets: CRITERIA.map(c=>({label:c.label,data:evs.map(e=>Number(e[c.key])),borderColor:c.color,backgroundColor:c.color,tension:.3,pointRadius:4})) },
+        data:{
+          labels: evs.map(e=>e.date),
+          datasets: [
+            { label:"Guud", data: evs.map(e=>Number(e.score)), borderColor:"#111", backgroundColor:"#111", tension:.3, pointRadius:4, borderWidth:2 },
+            ...CRITERIA_GROUPS.map((g,i)=>({
+              label: g.title.replace(/^[A-D]\.\s*/,''),
+              data: evs.map(e=>{ const cs=categoryScores(e); return cs[g.key]; }),
+              borderColor: colors[i], backgroundColor: colors[i], tension:.3, pointRadius:3, borderDash:[4,3]
+            }))
+          ]
+        },
         options:{ responsive:true, maintainAspectRatio:false,
-          scales:{ y:{min:0,max:10,ticks:{color:textColor,stepSize:2},grid:{color:gridColor}}, x:{ticks:{color:textColor},grid:{color:gridColor}} },
-          plugins:{ legend:{labels:{color:textColor,boxWidth:12,font:{size:10}}} } }
+          scales:{ y:{min:0,max:100,ticks:{color:textColor,stepSize:20},grid:{color:gridColor}}, x:{ticks:{color:textColor},grid:{color:gridColor}} },
+          plugins:{ legend:{labels:{color:textColor,boxWidth:10,font:{size:9}}} } }
       });
     }
   }
 
   function renderNewEval(){
     const today = new Date().toISOString().slice(0,10);
+    if (teachers.length===0){
+      app.innerHTML = `<div class="card"><div class="empty">Marka hore ku dar macallin tab-ka "Macallimiinta".</div></div>`;
+      return;
+    }
+    evalState = {};
+    CRITERIA_GROUPS.forEach((g,gi)=>{
+      g.items.forEach((text,ii)=>{
+        const key = g.key+"-"+ii;
+        evalState[key] = { rating:null, comment:"" };
+      });
+    });
+    openGroups = { [CRITERIA_GROUPS[0].key]: true };
+
     app.innerHTML = `
       <div class="card">
         <h2>Qiimeyn Cusub</h2>
-        ${teachers.length===0 ? `<div class="empty">Marka hore ku dar macallin tab-ka "Macallimiinta".</div>` : `
         <label>Dooro Macallinka</label>
         <select id="evalTeacherSel">
           <option value="">— Dooro —</option>
@@ -379,39 +507,122 @@
         </select>
         <label>Taariikhda Kormeerka</label>
         <input type="date" id="evalDate" value="${today}">
-        ${CRITERIA.map(c=>`
-          <label>${c.full} <span style="font-weight:400;color:var(--text-dim);">(1–10)</span></label>
-          <div class="range-row"><input type="range" min="1" max="10" step="1" value="7" id="range_${c.key}"><span class="range-val" id="val_${c.key}">7</span></div>
-        `).join("")}
-        <label>Fiiro Gaar Ah (ikhtiyaari)</label>
-        <textarea id="evalNotes" placeholder="Faallooyin, talooyin loogu talagalay macallinka..."></textarea>
-        <button class="btn" id="saveEvalBtn">💾 Kaydi Qiimeynta</button>
-        `}
+        <label>Progress-ka Buuxinta (<span id="progressCount">0</span>/${TOTAL_ITEMS})</label>
+        <div class="progress-bar-wrap"><div class="progress-bar" id="progressBar" style="width:0%;"></div></div>
+      </div>
+
+      <div id="groupsWrap"></div>
+
+      <div class="card">
+        <label>Fiiro Guud (ikhtiyaari)</label>
+        <textarea id="evalNotes" placeholder="Faallooyin guud, talooyin loogu talagalay macallinka..."></textarea>
+        <button class="btn" id="saveEvalBtn" disabled>💾 Kaydi Qiimeynta (buuxi dhammaan su'aalaha marka hore)</button>
       </div>
     `;
-    if (teachers.length===0) return;
-    CRITERIA.forEach(c=>{
-      const r=document.getElementById("range_"+c.key), v=document.getElementById("val_"+c.key);
-      r.addEventListener("input", ()=>{ v.textContent=r.value; });
+
+    const wrap = document.getElementById("groupsWrap");
+    CRITERIA_GROUPS.forEach(g=>{
+      const div = document.createElement("div");
+      div.className = "group" + (openGroups[g.key] ? " open" : "");
+      div.dataset.group = g.key;
+      div.innerHTML = `
+        <div class="group-head" data-togglegroup="${g.key}">
+          <h3>${g.title}</h3>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="group-progress" data-groupcount="${g.key}">0/${g.items.length}</span>
+            <span class="chev">▾</span>
+          </div>
+        </div>
+        <div class="group-body">
+          ${g.items.map((text,ii)=>{
+            const key = g.key+"-"+ii;
+            return `<div class="qitem">
+              <div class="qitem-text">${ii+1}. ${escapeHtml(text)}</div>
+              <div class="rate-row">
+                <button class="rate-btn" data-r="2" data-item="${key}">Haa</button>
+                <button class="rate-btn" data-r="1" data-item="${key}">Qayb ahaan</button>
+                <button class="rate-btn" data-r="0" data-item="${key}">Maya</button>
+              </div>
+              <input type="text" class="qitem-comment" data-comment="${key}" placeholder="Faallo (ikhtiyaari)">
+            </div>`;
+          }).join("")}
+        </div>
+      `;
+      wrap.appendChild(div);
     });
+
+    function updateProgress(){
+      let done = 0;
+      Object.values(evalState).forEach(v=>{ if (v.rating!==null) done++; });
+      document.getElementById("progressCount").textContent = done;
+      document.getElementById("progressBar").style.width = Math.round((done/TOTAL_ITEMS)*100)+"%";
+      CRITERIA_GROUPS.forEach(g=>{
+        let gdone = 0;
+        g.items.forEach((_,ii)=>{ if (evalState[g.key+"-"+ii].rating!==null) gdone++; });
+        const el = wrap.querySelector(`[data-groupcount="${g.key}"]`);
+        if (el) el.textContent = gdone+"/"+g.items.length;
+      });
+      const saveBtn = document.getElementById("saveEvalBtn");
+      if (done === TOTAL_ITEMS){
+        saveBtn.disabled = false;
+        saveBtn.textContent = "💾 Kaydi Qiimeynta";
+      } else {
+        saveBtn.disabled = true;
+        saveBtn.textContent = `💾 Kaydi Qiimeynta (${TOTAL_ITEMS-done} baaqi)`;
+      }
+    }
+
+    wrap.querySelectorAll("[data-togglegroup]").forEach(el=>{
+      el.addEventListener("click", ()=>{
+        const gkey = el.dataset.togglegroup;
+        const groupDiv = wrap.querySelector(`.group[data-group="${gkey}"]`);
+        groupDiv.classList.toggle("open");
+      });
+    });
+
+    wrap.querySelectorAll(".rate-btn").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const key = btn.dataset.item;
+        const r = Number(btn.dataset.r);
+        evalState[key].rating = r;
+        wrap.querySelectorAll(`.rate-btn[data-item="${key}"]`).forEach(b=>b.classList.remove("sel"));
+        btn.classList.add("sel");
+        updateProgress();
+      });
+    });
+    wrap.querySelectorAll(".qitem-comment").forEach(inp=>{
+      inp.addEventListener("input", ()=>{
+        const key = inp.dataset.comment;
+        evalState[key].comment = inp.value;
+      });
+    });
+
     document.getElementById("saveEvalBtn").addEventListener("click", async ()=>{
       const teacherId = document.getElementById("evalTeacherSel").value;
       const date = document.getElementById("evalDate").value;
       if (!teacherId){ alert("Fadlan dooro macallin."); return; }
       if (!date){ alert("Fadlan geli taariikhda."); return; }
-      const prep = document.getElementById("range_prep").value;
-      const classroom = document.getElementById("range_classroom").value;
-      const assessment = document.getElementById("range_assessment").value;
+      const items = [];
+      CRITERIA_GROUPS.forEach(g=>{
+        g.items.forEach((text,ii)=>{
+          const key = g.key+"-"+ii;
+          const st = evalState[key];
+          items.push({ key, group:g.key, text, rating:st.rating, comment:st.comment });
+        });
+      });
       const notes = document.getElementById("evalNotes").value;
       const btn = document.getElementById("saveEvalBtn"); btn.disabled=true; btn.textContent="Kaydinaya...";
       try {
-        await addEvaluation(teacherId, date, prep, classroom, assessment, notes);
+        await addEvaluation(teacherId, date, items, notes);
         preselectTeacher = null; currentTeacherId = teacherId;
+        await loadAll();
         document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.remove("active"));
         document.querySelector('nav.tabs button[data-tab="teachers"]').classList.add("active");
         activeTab = "teachers"; render();
       } catch(e){ alert("Khalad ayaa dhacay: "+e.message); btn.disabled=false; btn.textContent="💾 Kaydi Qiimeynta"; }
     });
+
+    updateProgress();
   }
 
   boot();

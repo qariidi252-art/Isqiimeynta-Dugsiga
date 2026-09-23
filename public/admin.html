@@ -50,7 +50,7 @@
   .eval-item { border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:10px; background:var(--surface-2); }
   .eval-item .row1 { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
   .notes-txt { font-size:.82rem; color:var(--text-dim); margin-top:6px; white-space:pre-wrap; }
-  .chart-wrap { position:relative; height:220px; margin-top:8px; }
+  .chart-wrap { position:relative; height:200px; margin-top:8px; }
   .compare-note { font-size:.8rem; padding:10px 12px; border-radius:10px; margin-top:10px; }
   .compare-note.ok { background:rgba(30,142,90,.12); color:var(--good); }
   .compare-note.pending { background:rgba(201,138,19,.12); color:var(--warn); }
@@ -60,28 +60,20 @@
   .link-box button { flex:0 0 auto; }
   #loginScreen { max-width:340px; margin:60px auto; text-align:center; }
 
-  /* Group / checklist styles */
-  .group { border:1px solid var(--border); border-radius:14px; margin-bottom:12px; overflow:hidden; background:var(--surface); }
-  .group-head { display:flex; justify-content:space-between; align-items:center; padding:12px 14px; cursor:pointer; background:var(--surface-2); }
-  .group-head h3 { margin:0; font-size:.9rem; }
-  .group-progress { font-size:.75rem; color:var(--text-dim); font-weight:700; }
-  .group-body { padding:10px 14px; display:none; }
-  .group.open .group-body { display:block; }
-  .group.open .chev { transform:rotate(180deg); }
-  .chev { transition:.15s; font-size:.8rem; color:var(--text-dim); }
-  .qitem { padding:12px 0; border-bottom:1px solid var(--border); }
-  .qitem:last-child { border-bottom:none; }
-  .qitem-text { font-size:.85rem; margin-bottom:8px; line-height:1.4; }
-  .rate-row { display:flex; gap:6px; margin-bottom:6px; }
-  .rate-btn { flex:1; padding:8px 4px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:.78rem; font-weight:700; cursor:pointer; text-align:center; }
-  .rate-btn[data-r="2"].sel { background:var(--good); border-color:var(--good); color:#fff; }
-  .rate-btn[data-r="1"].sel { background:var(--warn); border-color:var(--warn); color:#fff; }
-  .rate-btn[data-r="0"].sel { background:var(--bad); border-color:var(--bad); color:#fff; }
-  .qitem-comment { width:100%; padding:7px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:.8rem; }
-  .progress-bar-wrap { background:var(--surface-2); border-radius:20px; height:8px; overflow:hidden; margin:8px 0 14px; }
+  .scale-legend { font-size:.72rem; color:var(--text-dim); line-height:1.6; background:var(--surface-2); border-radius:10px; padding:10px 12px; margin-top:6px; }
+  .qitem { border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:10px; background:var(--surface); }
+  .qitem-title { font-weight:700; font-size:.85rem; margin-bottom:2px; }
+  .qitem-text { font-size:.8rem; color:var(--text-dim); margin-bottom:8px; line-height:1.4; }
+  .rate-row { display:flex; gap:5px; margin-bottom:6px; }
+  .rate-btn { flex:1; padding:9px 2px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:.85rem; font-weight:800; cursor:pointer; text-align:center; }
+  .rate-btn[data-r="5"].sel { background:var(--good); border-color:var(--good); color:#fff; }
+  .rate-btn[data-r="4"].sel { background:#5aa96d; border-color:#5aa96d; color:#fff; }
+  .rate-btn[data-r="3"].sel { background:var(--warn); border-color:var(--warn); color:#fff; }
+  .rate-btn[data-r="2"].sel { background:#d98a4c; border-color:#d98a4c; color:#fff; }
+  .rate-btn[data-r="1"].sel { background:var(--bad); border-color:var(--bad); color:#fff; }
+  .qitem-comment { width:100%; padding:7px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:.8rem; }
+  .progress-bar-wrap { background:var(--surface-2); border-radius:20px; height:8px; overflow:hidden; margin:8px 0 4px; }
   .progress-bar { background:var(--primary); height:100%; transition:width .2s; }
-  .cat-badges { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-  .cat-badge { font-size:.72rem; padding:3px 9px; border-radius:12px; background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); }
 </style>
 </head>
 <body>
@@ -114,57 +106,20 @@
 (function(){
   "use strict";
 
-  // ---------- Evaluation criteria (4 groups, 23 items total) ----------
-  const CRITERIA_GROUPS = [
-    {
-      key: "manhaj",
-      title: "A. Fulinta Manhajka",
-      items: [
-        "Macallinku si sax ah ma u adeegsadaa Muqarrarka (Syllabus)?",
-        "Macallinku ma leeyahay aqoon iyo tababar ku filan oo ku saabsan fulinta manhajka?",
-        "Macallinku ma haystaa nuqul ansaxsan oo Qorshe-wadeedka (Scheme of Work) ah?"
-      ]
-    },
-    {
-      key: "diyaarin",
-      title: "B. Howlaha Cashar Diyaarinta",
-      items: [
-        "Macallinku ma leeyahay Qorshe Shaqo iyo Cashar-diyaarin (Lesson Plan) oo laga soo saaray manhajka qaranka?",
-        "Macallinku ma haystaa agabka waxbarashada ee loo baahan yahay, sida buugga hagaha macallinka?",
-        "Macallinku ma aqoonsadaa kartida, waaya-aragnimada iyo xirfadaha ardayda, wuxuuna ma ku xiraa casharka cusub casharradii hore?",
-        "Macallinku ma adeegsadaa hababka wax-dhigidda isaga oo tixgelinaya kala duwanaanshaha da'da iyo kartida ardayda?",
-        "Macallinku ma hubiyaa fahamka ardayga inta casharku socdo?",
-        "Ardaydu ma si firfircoon ayay uga qaybqaataan casharka?"
-      ]
-    },
-    {
-      key: "fasal",
-      title: "C. Maareynta Fasalka",
-      items: [
-        "Fasalku ma yahay mid ku habboon baridda iyo barashada?",
-        "Macallinku ma adeegsadaa xeelado edbin togan si uu u maareeyo fasalka?",
-        "Macallinku ma raacaa habraaca ilaalinta ardayda iyo heerka anshaxa?",
-        "Macallinku ma sameeyaa socsocod gudaha fasalka ah si uu ula socdo dhaqdhaqaaqa ardayda (Class Movement/Eye Contact)?",
-        "Macallinku ma ixtiraamaa ardayda, qof kastana ma siiyaa fursad siman oo uu wax ku barto?",
-        "Macallinku ma xaadiriyaa ardayda bilowga iyo dhammaadka xiisadda?",
-        "Macallinku ma kor u qaadaa xiisaha iyo dhiirigelinta ardayda, isagoo hordhaca casharka ka dhigaya mid xiiso leh oo soo jiidasho leh?",
-        "Macallinku ma la sameeyaa dhammaan ardayda fasalka xiriir wanaagsan?",
-        "Macallinku ma leeyahay aqoon wanaagsan oo ku filan maaddada uu dhigayo?"
-      ]
-    },
-    {
-      key: "qiimeyn",
-      title: "D. Qiimeynta Ardayda iyo Jawaab-celinta",
-      items: [
-        "Macallinku ma qiimeeyaa habdhaqanka, aqoonta, xirfadaha, qiyamka iyo dabeecadaha ardayda inta lagu jiro habka waxbaridda?",
-        "Ardaydu ma helaan jawaab-celin cad oo waqti ku habboon, natiijooyinkana ma loo isticmaalaa taageeridda iyo horumarinta ardayda?",
-        "Ardayda ma la siiyaa talooyin ay ku hagaajinayaan meelaha ay ku liitaan?",
-        "Ardayga ku liita waxbarashada ma lala wadaagaa waalidkiis?",
-        "Qiimeynta macallinku ma ku salaysan tahay natiijooyinka waxbarasho iyo heerarka manhajka?"
-      ]
-    }
+  // ---------- Official 10-item evaluation form ----------
+  const CRITERIA = [
+    { key:"prep", title:"1. Cashar-diyaarinta", text:"Macallinku ma haystaa cashar-diyaarin dhammaystiran oo ansax ah?" },
+    { key:"scheme", title:"2. Isla Socodka Scheme of Work iyo Cashar-diyaarinta", text:"Ma isla socdaan Scheme of Work-ka iyo Cashar-diyaarinta, oo casharka la dhigayo ma waafaqsan yahay qorshaha?" },
+    { key:"agabka", title:"3. Agabka Waxbarashada", text:"Macallinku ma haystaa oo si habboon ma u isticmaalaa agabka looga baahan yahay casharka?" },
+    { key:"habka", title:"4. Habka Wax-dhigidda", text:"Macallinku ma adeegsadaa habab wax-dhigid oo ku habboon da'da iyo kartida ardayda?" },
+    { key:"fahamka", title:"5. Hubinta Fahamka Ardayda", text:"Macallinku ma hubiyaa fahamka ardayda inta casharku socdo?" },
+    { key:"fasalka", title:"6. Maareynta Fasalka", text:"Macallinku ma si wanaagsan ayuu u maareeyaa fasalka, una ilaaliyaa nidaamka iyo anshaxa ardayda?" },
+    { key:"qaybgal", title:"7. Ka-qaybgalka Ardayda", text:"Macallinku ma dhiirrigeliyaa oo ma ka qaybgelinayaa ardayda casharka?" },
+    { key:"ixtiraam", title:"8. Xiriirka iyo Ixtiraamka Ardayda", text:"Macallinku ma ixtiraamaa ardayda, qof walbana ma siiyaa fursad siman?" },
+    { key:"qiimeyn", title:"9. Qiimeynta Ardayda", text:"Macallinku ma qiimeeyaa aqoonta, xirfadaha iyo fahamka ardayda?" },
+    { key:"jawaab", title:"10. Jawaab-celinta Ardayda", text:"Macallinku ma siiyaa ardayda jawaab-celin iyo talooyin ka caawiya horumarkooda?" }
   ];
-  const TOTAL_ITEMS = CRITERIA_GROUPS.reduce((a,g)=>a+g.items.length,0);
+  const TOTAL_ITEMS = CRITERIA.length;
 
   let teachers = [];
   let evaluations = [];
@@ -172,8 +127,7 @@
   let activeTab = "dashboard";
   let preselectTeacher = null;
   let chartInstance = null;
-  let evalState = {}; // itemKey -> {rating, comment}
-  let openGroups = {}; // groupKey -> bool
+  let evalState = {};
 
   const app = document.getElementById("app");
   const PW_KEY = "qm_admin_pw";
@@ -239,25 +193,18 @@
   }
 
   function fmt1(n){ return (Math.round(n*10)/10).toFixed(1); }
-  function scoreBadgeClass(score){ if (score>=80) return "good"; if (score>=60) return "warn"; return "bad"; }
-  function scoreLabel(score){ if (score>=80) return "Wanaagsan"; if (score>=60) return "Dhexdhexaad"; return "U baahan taageero"; }
+  function overallLevel(pct){
+    if (pct>=90) return "Heer Sare";
+    if (pct>=70) return "Wanaagsan";
+    if (pct>=50) return "La Aqbali Karo";
+    if (pct>=30) return "U Baahan Horumarin";
+    return "U Baahan Taageero Degdeg ah";
+  }
+  function scoreBadgeClass(pct){ if (pct>=70) return "good"; if (pct>=50) return "warn"; return "bad"; }
   function teacherEvals(id){ return evaluations.filter(e=>e.teacher_id===id).sort((a,b)=>new Date(a.date)-new Date(b.date)); }
   function teacherLatestScore(id){ const e=teacherEvals(id); return e.length? Number(e[e.length-1].score) : null; }
   function teacherOverallScore(id){ const e=teacherEvals(id); if(!e.length) return null; return e.reduce((a,x)=>a+Number(x.score),0)/e.length; }
   function escapeHtml(s){ return String(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
-
-  // Category sub-score for one evaluation: returns {groupKey: pct}
-  function categoryScores(ev){
-    const items = ev.items || [];
-    const out = {};
-    CRITERIA_GROUPS.forEach(g=>{
-      const gi = items.filter(it=>it.group===g.key);
-      if (!gi.length){ out[g.key]=null; return; }
-      const sum = gi.reduce((a,it)=>a+Number(it.rating),0);
-      out[g.key] = Math.round((sum/(gi.length*2))*1000)/10;
-    });
-    return out;
-  }
 
   async function addTeacher(name, subject){
     const t = await api("/api/teachers", { method:"POST", body: JSON.stringify({name, subject}) });
@@ -269,8 +216,8 @@
     await loadAll();
   }
   async function deleteTeacher(id){ await api("/api/teachers/"+id, { method:"DELETE" }); if (currentTeacherId===id) currentTeacherId=null; await loadAll(); }
-  async function addEvaluation(teacherId, date, items, notes){
-    return await api("/api/evaluations", { method:"POST", body: JSON.stringify({teacherId, date, items, notes}) });
+  async function addEvaluation(teacherId, date, items, meta){
+    return await api("/api/evaluations", { method:"POST", body: JSON.stringify({teacherId, date, items, meta}) });
   }
   async function deleteEvaluation(id){ await api("/api/evaluations/"+id, { method:"DELETE" }); await loadAll(); }
 
@@ -284,7 +231,7 @@
     const totalTeachers = teachers.length;
     const totalEvals = evaluations.length;
     const overallScore = totalEvals ? fmt1(evaluations.reduce((a,e)=>a+Number(e.score),0)/totalEvals) : "—";
-    const needAttention = teachers.filter(t=>{ const s=teacherLatestScore(t.id); return s!==null && s<60; }).length;
+    const needAttention = teachers.filter(t=>{ const s=teacherLatestScore(t.id); return s!==null && s<50; }).length;
 
     let rows = teachers.map(t=>{
       const evs = teacherEvals(t.id);
@@ -335,14 +282,14 @@
         <h2>Ku dar Macallin Cusub</h2>
         <label>Magaca Macallinka</label>
         <input type="text" id="newTeacherName" placeholder="tusaale: Xasan Cali Maxamed">
-        <label>Maadada / Xilliga (ikhtiyaari)</label>
-        <input type="text" id="newTeacherSubject" placeholder="tusaale: Xisaabta, Fasalka 5">
+        <label>Maadada (ikhtiyaari)</label>
+        <input type="text" id="newTeacherSubject" placeholder="tusaale: Xisaabta">
         <button class="btn" id="btnAddTeacher">➕ Ku Dar Macallin</button>
       </div>
       <div class="card">
         <h2>Ku dar Dhowr Macallin Mar Hal Ah</h2>
         <label>Magacyada (mid kasta xariiq gooni ah)</label>
-        <textarea id="bulkNames" placeholder="Xasan Cali Maxamed&#10;Faadumo Axmed Nuur&#10;Cabdi Xasan Warsame&#10;..." style="min-height:120px;"></textarea>
+        <textarea id="bulkNames" placeholder="Xasan Cali Maxamed&#10;Faadumo Axmed Nuur&#10;..." style="min-height:120px;"></textarea>
         <button class="btn secondary" id="btnBulkAdd">📋 Ku Dar Dhammaan</button>
       </div>
       <div class="card">
@@ -402,7 +349,7 @@
       <div class="card">
         <h2>${escapeHtml(t.name)}</h2>
         <div class="sub" style="color:var(--text-dim);margin-bottom:8px;">${escapeHtml(t.subject||"")}</div>
-        ${overall!==null ? `<span class="badge ${scoreBadgeClass(overall)}">Celceliska Guud: ${fmt1(overall)}% · ${scoreLabel(overall)}</span>` : `<span class="badge neutral">Wali lama qiimeyn</span>`}
+        ${overall!==null ? `<span class="badge ${scoreBadgeClass(overall)}">Celceliska Guud: ${fmt1(overall)}% · ${overallLevel(overall)}</span>` : `<span class="badge neutral">Wali lama qiimeyn</span>`}
         ${evs.length>=2 ? `<div class="chart-wrap"><canvas id="teacherChart"></canvas></div>` : ""}
         ${evs.length<3 ? `<div class="compare-note pending">📌 Waxaad heysaa ${evs.length} qiimeyn. Ugu yaraan 3 ayaa loo baahan yahay si loo isbarbardhigo horumarka.</div>` : `<div class="compare-note ok">✅ ${evs.length} qiimeyn — waad isbarbardhigi kartaa horumarka.</div>`}
         <label>🔗 Link-ga macallinku uu ula socon karo xogtiisa (u dir isaga)</label>
@@ -412,17 +359,13 @@
         <h2>Taariikhda Qiimeymaha (${evs.length})</h2>
         ${evs.length===0 ? `<div class="empty">Macallinkan wali lama qiimeynin.</div>` :
         evs.slice().reverse().map(e=>{
-          const cs = categoryScores(e);
-          const withComments = (e.items||[]).filter(it=>it.comment);
+          const meta = e.meta || {};
           return `<div class="eval-item">
-            <div class="row1"><span style="font-weight:700;font-size:.85rem;">${e.date}</span>
+            <div class="row1"><span style="font-weight:700;font-size:.85rem;">${e.date}${meta.class?` · Fasalka ${escapeHtml(meta.class)}`:""}</span>
               <span style="display:flex;align-items:center;gap:6px;"><span class="badge ${scoreBadgeClass(Number(e.score))}">${fmt1(Number(e.score))}%</span><button class="del-x" data-delev="${e.id}">✕</button></span>
             </div>
-            <div class="cat-badges">
-              ${CRITERIA_GROUPS.map(g=>`<span class="cat-badge">${g.title.replace(/^[A-D]\.\s*/,'')}: ${cs[g.key]!==null?fmt1(cs[g.key])+'%':'—'}</span>`).join("")}
-            </div>
-            ${e.notes ? `<div class="notes-txt">📝 ${escapeHtml(e.notes)}</div>` : ""}
-            ${withComments.length ? `<div class="notes-txt">💬 ${withComments.length} faallo su'aal gaar ah — <a href="#" data-viewdetail="${e.id}" style="color:var(--accent);">arag faahfaahin</a></div>` : ""}
+            <div class="notes-txt">${overallLevel(Number(e.score))}${meta.supervisorName?` · Kormeere: ${escapeHtml(meta.supervisorName)}`:""}</div>
+            ${meta.strengths || meta.improvements || meta.recommendations ? `<div class="notes-txt">📝 <a href="#" data-viewdetail="${e.id}" style="color:var(--accent);">Arag faallada guud iyo qorshaha dabagalka</a></div>` : ""}
           </div>`;
         }).join("")}
       </div>
@@ -450,8 +393,18 @@
         const evalId = el.dataset.viewdetail;
         const evalObj = evs.find(x=>x.id===evalId);
         if (!evalObj) return;
-        const lines = (evalObj.items||[]).filter(it=>it.comment).map(it=>`• ${it.text}\n  → ${it.comment}`).join("\n\n");
-        alert("Faallooyinka " + evalObj.date + ":\n\n" + (lines || "Ma jiraan faallooyin."));
+        const m = evalObj.meta || {};
+        let msg = `Qiimeynta ${evalObj.date}:\n\n`;
+        if (m.strengths) msg += `WANAAGSAN:\n${m.strengths}\n\n`;
+        if (m.improvements) msg += `U BAAHAN HORUMARIN:\n${m.improvements}\n\n`;
+        if (m.recommendations) msg += `TALOOYINKA KORMEERAHA:\n${m.recommendations}\n\n`;
+        if (m.followupArea || m.followupAction || m.followupDate) {
+          msg += `QORSHAHA DABAGALKA:\n`;
+          if (m.followupArea) msg += `Meesha: ${m.followupArea}\n`;
+          if (m.followupAction) msg += `Tallaabada: ${m.followupAction}\n`;
+          if (m.followupDate) msg += `Waqtiga: ${m.followupDate}\n`;
+        }
+        alert(msg || "Faallo lama gelin.");
       });
     });
 
@@ -461,23 +414,17 @@
       const cssVal = getComputedStyle(document.documentElement);
       const textColor = cssVal.getPropertyValue('--text').trim()||'#333';
       const gridColor = cssVal.getPropertyValue('--border').trim()||'#ddd';
-      const colors = ["#2f7fd1","#1e6f5c","#c98a13","#8e44ad"];
       chartInstance = new Chart(ctx, {
         type:"line",
         data:{
           labels: evs.map(e=>e.date),
           datasets: [
-            { label:"Guud", data: evs.map(e=>Number(e.score)), borderColor:"#111", backgroundColor:"#111", tension:.3, pointRadius:4, borderWidth:2 },
-            ...CRITERIA_GROUPS.map((g,i)=>({
-              label: g.title.replace(/^[A-D]\.\s*/,''),
-              data: evs.map(e=>{ const cs=categoryScores(e); return cs[g.key]; }),
-              borderColor: colors[i], backgroundColor: colors[i], tension:.3, pointRadius:3, borderDash:[4,3]
-            }))
+            { label:"Celceliska Guud (%)", data: evs.map(e=>Number(e.score)), borderColor:"#1e6f5c", backgroundColor:"#1e6f5c", tension:.3, pointRadius:4, borderWidth:2 }
           ]
         },
         options:{ responsive:true, maintainAspectRatio:false,
           scales:{ y:{min:0,max:100,ticks:{color:textColor,stepSize:20},grid:{color:gridColor}}, x:{ticks:{color:textColor},grid:{color:gridColor}} },
-          plugins:{ legend:{labels:{color:textColor,boxWidth:10,font:{size:9}}} } }
+          plugins:{ legend:{labels:{color:textColor,boxWidth:10,font:{size:10}}} } }
       });
     }
   }
@@ -489,64 +436,79 @@
       return;
     }
     evalState = {};
-    CRITERIA_GROUPS.forEach((g,gi)=>{
-      g.items.forEach((text,ii)=>{
-        const key = g.key+"-"+ii;
-        evalState[key] = { rating:null, comment:"" };
-      });
-    });
-    openGroups = { [CRITERIA_GROUPS[0].key]: true };
+    CRITERIA.forEach(c=>{ evalState[c.key] = { rating:null, comment:"" }; });
 
     app.innerHTML = `
       <div class="card">
-        <h2>Qiimeyn Cusub</h2>
+        <h2>Foomka Kormeerka iyo Qiimeynta Macallinka</h2>
+        <label>Dugsiga</label>
+        <input type="text" id="evalSchool" value="Dugsiga Howlwadaag Sare">
         <label>Dooro Macallinka</label>
         <select id="evalTeacherSel">
           <option value="">— Dooro —</option>
           ${teachers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(t=>`<option value="${t.id}" ${preselectTeacher===t.id?"selected":""}>${escapeHtml(t.name)}${t.subject?" — "+escapeHtml(t.subject):""}</option>`).join("")}
         </select>
+        <label>Fasalka</label>
+        <input type="text" id="evalClass" placeholder="tusaale: Fasalka 5">
         <label>Taariikhda Kormeerka</label>
         <input type="date" id="evalDate" value="${today}">
+        <label>Magaca Kormeeraha</label>
+        <input type="text" id="evalSupervisor" placeholder="Magacaaga">
+        <div class="scale-legend">
+          <b>Heerarka Qiimeynta:</b><br>
+          5 = Heer Sare &nbsp; 4 = Wanaagsan &nbsp; 3 = La Aqbali Karo &nbsp; 2 = U Baahan Horumarin &nbsp; 1 = U Baahan Taageero Degdeg ah
+        </div>
         <label>Progress-ka Buuxinta (<span id="progressCount">0</span>/${TOTAL_ITEMS})</label>
         <div class="progress-bar-wrap"><div class="progress-bar" id="progressBar" style="width:0%;"></div></div>
       </div>
 
-      <div id="groupsWrap"></div>
+      <div id="itemsWrap"></div>
 
       <div class="card">
-        <label>Fiiro Guud (ikhtiyaari)</label>
-        <textarea id="evalNotes" placeholder="Faallooyin guud, talooyin loogu talagalay macallinka..."></textarea>
-        <button class="btn" id="saveEvalBtn" disabled>💾 Kaydi Qiimeynta (buuxi dhammaan su'aalaha marka hore)</button>
+        <h2>Faallo Guud oo Kormeeraha</h2>
+        <label>Waxyaabaha uu macallinku ku wanaagsan yahay</label>
+        <textarea id="evalStrengths" placeholder="..."></textarea>
+        <label>Waxyaabaha u baahan horumarinta</label>
+        <textarea id="evalImprovements" placeholder="..."></textarea>
+        <label>Talooyinka Kormeeraha</label>
+        <textarea id="evalRecommendations" placeholder="..."></textarea>
+      </div>
+
+      <div class="card">
+        <h2>Qorshaha Dabagalka</h2>
+        <label>Meesha u baahan horumarinta</label>
+        <input type="text" id="evalFollowupArea" placeholder="...">
+        <label>Tallaabada la qaadayo</label>
+        <input type="text" id="evalFollowupAction" placeholder="...">
+        <label>Waqtiga dabagalka</label>
+        <input type="text" id="evalFollowupDate" placeholder="tusaale: 3 toddobaad">
+      </div>
+
+      <div class="card">
+        <h2>Saxiixyada</h2>
+        <label>Saxiixa Macallinka (magaca)</label>
+        <input type="text" id="evalTeacherSig" placeholder="Magaca macallinka">
+        <label>Saxiixa Kormeeraha/Maamulaha (magaca)</label>
+        <input type="text" id="evalSupervisorSig" placeholder="Magaca kormeeraha">
+        <button class="btn" id="saveEvalBtn" disabled>💾 Kaydi Qiimeynta (buuxi 10-da su'aal marka hore)</button>
       </div>
     `;
 
-    const wrap = document.getElementById("groupsWrap");
-    CRITERIA_GROUPS.forEach(g=>{
+    const wrap = document.getElementById("itemsWrap");
+    CRITERIA.forEach(c=>{
       const div = document.createElement("div");
-      div.className = "group" + (openGroups[g.key] ? " open" : "");
-      div.dataset.group = g.key;
+      div.className = "qitem";
       div.innerHTML = `
-        <div class="group-head" data-togglegroup="${g.key}">
-          <h3>${g.title}</h3>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span class="group-progress" data-groupcount="${g.key}">0/${g.items.length}</span>
-            <span class="chev">▾</span>
-          </div>
+        <div class="qitem-title">${c.title}</div>
+        <div class="qitem-text">${escapeHtml(c.text)}</div>
+        <div class="rate-row">
+          <button class="rate-btn" data-r="5" data-item="${c.key}">5</button>
+          <button class="rate-btn" data-r="4" data-item="${c.key}">4</button>
+          <button class="rate-btn" data-r="3" data-item="${c.key}">3</button>
+          <button class="rate-btn" data-r="2" data-item="${c.key}">2</button>
+          <button class="rate-btn" data-r="1" data-item="${c.key}">1</button>
         </div>
-        <div class="group-body">
-          ${g.items.map((text,ii)=>{
-            const key = g.key+"-"+ii;
-            return `<div class="qitem">
-              <div class="qitem-text">${ii+1}. ${escapeHtml(text)}</div>
-              <div class="rate-row">
-                <button class="rate-btn" data-r="2" data-item="${key}">Haa</button>
-                <button class="rate-btn" data-r="1" data-item="${key}">Qayb ahaan</button>
-                <button class="rate-btn" data-r="0" data-item="${key}">Maya</button>
-              </div>
-              <input type="text" class="qitem-comment" data-comment="${key}" placeholder="Faallo (ikhtiyaari)">
-            </div>`;
-          }).join("")}
-        </div>
+        <input type="text" class="qitem-comment" data-comment="${c.key}" placeholder="Comment/Faallo (ikhtiyaari)">
       `;
       wrap.appendChild(div);
     });
@@ -556,12 +518,6 @@
       Object.values(evalState).forEach(v=>{ if (v.rating!==null) done++; });
       document.getElementById("progressCount").textContent = done;
       document.getElementById("progressBar").style.width = Math.round((done/TOTAL_ITEMS)*100)+"%";
-      CRITERIA_GROUPS.forEach(g=>{
-        let gdone = 0;
-        g.items.forEach((_,ii)=>{ if (evalState[g.key+"-"+ii].rating!==null) gdone++; });
-        const el = wrap.querySelector(`[data-groupcount="${g.key}"]`);
-        if (el) el.textContent = gdone+"/"+g.items.length;
-      });
       const saveBtn = document.getElementById("saveEvalBtn");
       if (done === TOTAL_ITEMS){
         saveBtn.disabled = false;
@@ -571,14 +527,6 @@
         saveBtn.textContent = `💾 Kaydi Qiimeynta (${TOTAL_ITEMS-done} baaqi)`;
       }
     }
-
-    wrap.querySelectorAll("[data-togglegroup]").forEach(el=>{
-      el.addEventListener("click", ()=>{
-        const gkey = el.dataset.togglegroup;
-        const groupDiv = wrap.querySelector(`.group[data-group="${gkey}"]`);
-        groupDiv.classList.toggle("open");
-      });
-    });
 
     wrap.querySelectorAll(".rate-btn").forEach(btn=>{
       btn.addEventListener("click", ()=>{
@@ -602,18 +550,23 @@
       const date = document.getElementById("evalDate").value;
       if (!teacherId){ alert("Fadlan dooro macallin."); return; }
       if (!date){ alert("Fadlan geli taariikhda."); return; }
-      const items = [];
-      CRITERIA_GROUPS.forEach(g=>{
-        g.items.forEach((text,ii)=>{
-          const key = g.key+"-"+ii;
-          const st = evalState[key];
-          items.push({ key, group:g.key, text, rating:st.rating, comment:st.comment });
-        });
-      });
-      const notes = document.getElementById("evalNotes").value;
+      const items = CRITERIA.map(c=>({ key:c.key, title:c.title, text:c.text, rating:evalState[c.key].rating, comment:evalState[c.key].comment }));
+      const meta = {
+        school: document.getElementById("evalSchool").value,
+        class: document.getElementById("evalClass").value,
+        supervisorName: document.getElementById("evalSupervisor").value,
+        strengths: document.getElementById("evalStrengths").value,
+        improvements: document.getElementById("evalImprovements").value,
+        recommendations: document.getElementById("evalRecommendations").value,
+        followupArea: document.getElementById("evalFollowupArea").value,
+        followupAction: document.getElementById("evalFollowupAction").value,
+        followupDate: document.getElementById("evalFollowupDate").value,
+        teacherSignature: document.getElementById("evalTeacherSig").value,
+        supervisorSignature: document.getElementById("evalSupervisorSig").value
+      };
       const btn = document.getElementById("saveEvalBtn"); btn.disabled=true; btn.textContent="Kaydinaya...";
       try {
-        await addEvaluation(teacherId, date, items, notes);
+        await addEvaluation(teacherId, date, items, meta);
         preselectTeacher = null; currentTeacherId = teacherId;
         await loadAll();
         document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.remove("active"));

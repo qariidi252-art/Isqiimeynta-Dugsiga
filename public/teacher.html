@@ -6,24 +6,27 @@
 <title>Xogtayda — Qiimeynta</title>
 <style>
   :root {
-    --bg:#f4f6f8; --surface:#fff; --surface-2:#eef1f4; --text:#1c2530; --text-dim:#5b6b7a;
-    --border:#dde3e9; --primary:#1e6f5c; --primary-dark:#14503f;
+    --bg:#f2f4f8; --surface:#fff; --surface-2:#eef1f6; --text:#1a2035; --text-dim:#5b6478;
+    --border:#dde2ec; --navy:#0d1b5e; --navy-dark:#081142; --gold:#f2b705;
     --good:#1e8e5a; --warn:#c98a13; --bad:#c0392b;
-    --shadow:0 1px 3px rgba(20,30,40,.08),0 1px 2px rgba(20,30,40,.06);
+    --shadow:0 1px 3px rgba(13,27,94,.10),0 1px 2px rgba(13,27,94,.06);
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#12171c; --surface:#1a2128; --surface-2:#212a32; --text:#e7edf2; --text-dim:#93a3b1;
-      --border:#2a343d; --primary:#3fae8f; --primary-dark:#2c8168;
-      --good:#3fae7a; --warn:#e0ac3f; --bad:#e0685b; }
+    :root { --bg:#0f1320; --surface:#161b2c; --surface-2:#1d2338; --text:#e7ebf5; --text-dim:#8f97b3;
+      --border:#2a3150; --navy:#3550c9; --navy-dark:#1a2560; --gold:#f2c94c;
+      --good:#3fae7a; --warn:#e0ac3f; --bad:#e0685b;
+      --shadow:0 1px 3px rgba(0,0,0,.4),0 1px 2px rgba(0,0,0,.3); }
   }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; font-size:15px; }
-  header { padding:18px 16px; background:linear-gradient(135deg,var(--primary-dark),var(--primary)); color:#fff; }
-  header h1 { margin:0 0 2px; font-size:1.15rem; }
-  header p { margin:0; font-size:.8rem; opacity:.85; }
+  header { padding:18px 16px; background:linear-gradient(135deg,var(--navy-dark),var(--navy)); color:#fff; display:flex; align-items:center; gap:12px; }
+  header img.logo { width:46px; height:46px; border-radius:50%; object-fit:cover; box-shadow:0 0 0 2px var(--gold); flex-shrink:0; }
+  header h1 { margin:0 0 2px; font-size:1.05rem; }
+  header p { margin:0; font-size:.75rem; opacity:.85; }
   main { padding:14px; max-width:700px; margin:0 auto; }
   .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px; box-shadow:var(--shadow); }
-  .card h2 { margin:0 0 4px; font-size:1.1rem; }
+  .card h2 { margin:0 0 4px; font-size:1.1rem; color:var(--navy); }
+  @media (prefers-color-scheme: dark) { .card h2 { color:var(--gold); } }
   .sub { color:var(--text-dim); font-size:.85rem; margin-bottom:10px; }
   .badge { display:inline-block; padding:4px 12px; border-radius:20px; font-size:.85rem; font-weight:700; color:#fff; }
   .badge.good { background:var(--good); } .badge.warn { background:var(--warn); } .badge.bad { background:var(--bad); } .badge.neutral { background:var(--text-dim); }
@@ -37,10 +40,12 @@
   .empty, .loading { text-align:center; padding:40px 10px; color:var(--text-dim); }
   .stat-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:14px; }
   .stat { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px; text-align:center; box-shadow:var(--shadow); }
-  .stat .num { font-size:1.5rem; font-weight:800; color:var(--primary); }
+  .stat .num { font-size:1.5rem; font-weight:800; color:var(--navy); }
+  @media (prefers-color-scheme: dark) { .stat .num { color:var(--gold); } }
   .stat .lbl { font-size:.72rem; color:var(--text-dim); }
   details { margin-top:8px; }
-  summary { font-size:.8rem; color:var(--primary); cursor:pointer; font-weight:600; }
+  summary { font-size:.8rem; color:var(--navy); cursor:pointer; font-weight:600; }
+  @media (prefers-color-scheme: dark) { summary { color:var(--gold); } }
   .qrow { padding:9px 0; border-bottom:1px solid var(--border); font-size:.82rem; }
   .qrow:last-child { border-bottom:none; }
   .qrow .qtitle { font-weight:700; margin-bottom:3px; }
@@ -50,12 +55,21 @@
   .qcomment { color:var(--text-dim); font-size:.78rem; margin-top:4px; }
   .meta-block { font-size:.82rem; margin-top:6px; }
   .meta-block b { display:block; margin-top:8px; font-size:.78rem; color:var(--text-dim); }
+  .cmp-row { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); font-size:.8rem; gap:8px; }
+  .cmp-row:last-child { border-bottom:none; }
+  .cmp-title { flex:1; }
+  .cmp-vals { display:flex; align-items:center; gap:6px; font-weight:800; white-space:nowrap; }
+  .cmp-up { color:var(--good); } .cmp-down { color:var(--bad); } .cmp-same { color:var(--text-dim); }
+  .cmp-summary { font-size:.82rem; padding:10px 12px; border-radius:10px; margin-bottom:8px; background:var(--surface-2); }
 </style>
 </head>
 <body>
 <header>
-  <h1>👋 Xogtayda ee Qiimeynta</h1>
-  <p>Halkan waxaad ka arki kartaa horumarkaaga kormeerka</p>
+  <img class="logo" src="/logo.jpg" alt="Dugsiga Howlwadaag Sare">
+  <div>
+    <h1>👋 Xogtayda ee Qiimeynta</h1>
+    <p>Dugsiga Howlwadaag Sare — horumarkaaga kormeerka</p>
+  </div>
 </header>
 <main id="app"><div class="loading">Soo dejinaya...</div></main>
 
@@ -63,6 +77,8 @@
 <script>
 (function(){
   "use strict";
+
+  const CRITERIA_KEYS = ["prep","scheme","agabka","habka","fahamka","fasalka","qaybgal","ixtiraam","qiimeyn","jawaab"];
 
   function fmt1(n){ return (Math.round(n*10)/10).toFixed(1); }
   function overallLevel(pct){
@@ -74,6 +90,37 @@
   }
   function scoreBadgeClass(pct){ if (pct>=70) return "good"; if (pct>=50) return "warn"; return "bad"; }
   function escapeHtml(s){ return String(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+  function ratingLabel(r){ return r; }
+
+  function compareItems(prevEval, currEval){
+    const prevItems = prevEval.items || [];
+    const currItems = currEval.items || [];
+    return currItems.map(cur=>{
+      const p = prevItems.find(it=>it.key===cur.key);
+      const pr = p ? Number(p.rating) : null;
+      const cr = Number(cur.rating);
+      let status = "same";
+      if (pr!==null){ if (cr>pr) status="up"; else if (cr<pr) status="down"; }
+      return { title:cur.title, prev:pr, curr:cr, delta:(pr!==null)?cr-pr:null, status };
+    });
+  }
+  function comparisonHtml(prevEval, currEval){
+    const cmp = compareItems(prevEval, currEval);
+    const up = cmp.filter(c=>c.status==="up").length;
+    const down = cmp.filter(c=>c.status==="down").length;
+    const same = cmp.filter(c=>c.status==="same").length;
+    let summaryText;
+    if (up > down) summaryText = `📈 Horumar guud ayaad sameysay — ${up} qodob kor u kacay, ${down} hoos u dhacay, ${same} isku mid ahaaday.`;
+    else if (down > up) summaryText = `📉 Hoos u dhac ayaa dhacay — ${down} qodob hoos u dhacay, ${up} kor u kacay, ${same} isku mid ahaaday.`;
+    else summaryText = `➖ Isbeddel weyn lama arag — ${up} kor u kacay, ${down} hoos u dhacay, ${same} isku mid ahaaday.`;
+    const rows = cmp.map(c=>{
+      let cls="cmp-same", arrow="▬", note="Isku mid";
+      if (c.status==="up"){ cls="cmp-up"; arrow="▲"; note=`Horumar (+${c.delta})`; }
+      else if (c.status==="down"){ cls="cmp-down"; arrow="▼"; note=`Hoos u dhac (${c.delta})`; }
+      return `<div class="cmp-row"><div class="cmp-title">${escapeHtml(c.title)}</div><div class="cmp-vals ${cls}">${c.prev!==null?c.prev:"—"} → ${c.curr} ${arrow} <span style="font-weight:600;font-size:.72rem;">${note}</span></div></div>`;
+    }).join("");
+    return `<div class="cmp-summary">${summaryText}</div>${rows}`;
+  }
 
   const app = document.getElementById("app");
   const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -117,9 +164,11 @@
       <div class="card">
         <h2>Taariikhda Qiimeymaha</h2>
         ${evs.length===0 ? `<div class="empty">Wali lama kuu qiimeynin.</div>` :
-        evs.slice().reverse().map(e=>{
+        evs.slice().reverse().map((e,revIdx)=>{
           const score = Number(e.score);
           const m = e.meta || {};
+          const idxAsc = evs.length - 1 - revIdx;
+          const prevEval = idxAsc>0 ? evs[idxAsc-1] : null;
           return `<div class="eval-item">
             <div class="row1"><span style="font-weight:700;font-size:.85rem;">${e.date}${m.class?` · ${escapeHtml(m.class)}`:""}</span><span class="badge ${scoreBadgeClass(score)}">${fmt1(score)}%</span></div>
             <div class="notes-txt">${overallLevel(score)}${m.supervisorName?` · Kormeere: ${escapeHtml(m.supervisorName)}`:""}</div>
@@ -136,13 +185,8 @@
                 ${m.improvements?`<b>U baahan horumarinta:</b>${escapeHtml(m.improvements)}`:""}
                 ${m.recommendations?`<b>Talooyinka Kormeeraha:</b>${escapeHtml(m.recommendations)}`:""}
               </div>`:""}
-              ${(m.followupArea||m.followupAction||m.followupDate) ? `<div class="meta-block">
-                <b>Qorshaha Dabagalka:</b>
-                ${m.followupArea?`Meesha: ${escapeHtml(m.followupArea)}<br>`:""}
-                ${m.followupAction?`Tallaabada: ${escapeHtml(m.followupAction)}<br>`:""}
-                ${m.followupDate?`Waqtiga: ${escapeHtml(m.followupDate)}`:""}
-              </div>`:""}
             </details>
+            ${prevEval ? `<details><summary>📊 Isbarbardhigga qodob-qodobka (vs ${prevEval.date})</summary>${comparisonHtml(prevEval, e)}</details>` : ""}
           </div>`;
         }).join("")}
       </div>
@@ -158,7 +202,7 @@
         data:{
           labels: evs.map(e=>e.date),
           datasets: [
-            { label:"Celceliska Guud (%)", data: evs.map(e=>Number(e.score)), borderColor:"#1e6f5c", backgroundColor:"#1e6f5c", tension:.3, pointRadius:4, borderWidth:2 }
+            { label:"Celceliska Guud (%)", data: evs.map(e=>Number(e.score)), borderColor:"#0d1b5e", backgroundColor:"#0d1b5e", tension:.3, pointRadius:4, borderWidth:2 }
           ]
         },
         options:{ responsive:true, maintainAspectRatio:false,

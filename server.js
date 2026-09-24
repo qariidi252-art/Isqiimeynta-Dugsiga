@@ -226,7 +226,11 @@ app.get("/api/public/:token", async (req, res) => {
 });
 
 // ---------- Static pages ----------
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(__dirname, "public"), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith(".html")) res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  },
+}));
 
 app.get("/t/:token", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "teacher.html"));

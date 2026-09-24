@@ -6,37 +6,42 @@
 <title>Maamulka — Qiimeynta Macallimiinta</title>
 <style>
   :root {
-    --bg:#f4f6f8; --surface:#fff; --surface-2:#eef1f4; --text:#1c2530; --text-dim:#5b6b7a;
-    --border:#dde3e9; --primary:#1e6f5c; --primary-dark:#14503f; --accent:#2f7fd1;
+    --bg:#f2f4f8; --surface:#fff; --surface-2:#eef1f6; --text:#1a2035; --text-dim:#5b6478;
+    --border:#dde2ec; --navy:#0d1b5e; --navy-dark:#081142; --gold:#f2b705; --accent:#2f7fd1;
     --good:#1e8e5a; --warn:#c98a13; --bad:#c0392b;
-    --shadow:0 1px 3px rgba(20,30,40,.08),0 1px 2px rgba(20,30,40,.06);
+    --shadow:0 1px 3px rgba(13,27,94,.10),0 1px 2px rgba(13,27,94,.06);
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#12171c; --surface:#1a2128; --surface-2:#212a32; --text:#e7edf2; --text-dim:#93a3b1;
-      --border:#2a343d; --primary:#3fae8f; --primary-dark:#2c8168; --accent:#5b9fe0;
-      --good:#3fae7a; --warn:#e0ac3f; --bad:#e0685b; }
+    :root { --bg:#0f1320; --surface:#161b2c; --surface-2:#1d2338; --text:#e7ebf5; --text-dim:#8f97b3;
+      --border:#2a3150; --navy:#3550c9; --navy-dark:#1a2560; --gold:#f2c94c; --accent:#5b9fe0;
+      --good:#3fae7a; --warn:#e0ac3f; --bad:#e0685b;
+      --shadow:0 1px 3px rgba(0,0,0,.4),0 1px 2px rgba(0,0,0,.3); }
   }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; font-size:15px; }
-  header { padding:16px; background:linear-gradient(135deg,var(--primary-dark),var(--primary)); color:#fff; }
-  header h1 { margin:0 0 2px; font-size:1.15rem; }
-  header p { margin:0; font-size:.8rem; opacity:.85; }
+  header { padding:16px; background:linear-gradient(135deg,var(--navy-dark),var(--navy)); color:#fff; display:flex; align-items:center; gap:12px; }
+  header img.logo { width:46px; height:46px; border-radius:50%; object-fit:cover; box-shadow:0 0 0 2px var(--gold); flex-shrink:0; }
+  header .htext h1 { margin:0 0 2px; font-size:1.05rem; }
+  header .htext p { margin:0; font-size:.75rem; opacity:.85; }
   nav.tabs { display:flex; gap:6px; overflow-x:auto; padding:10px 12px; background:var(--surface); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:10; }
   nav.tabs button { flex:0 0 auto; border:1px solid var(--border); background:var(--surface-2); color:var(--text); padding:8px 14px; border-radius:20px; font-size:.85rem; font-weight:600; cursor:pointer; }
-  nav.tabs button.active { background:var(--primary); border-color:var(--primary); color:#fff; }
+  nav.tabs button.active { background:var(--navy); border-color:var(--navy); color:#fff; }
   main { padding:14px; max-width:760px; margin:0 auto; }
   .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px; box-shadow:var(--shadow); }
-  .card h2 { margin:0 0 12px; font-size:1rem; }
+  .card h2 { margin:0 0 12px; font-size:1rem; color:var(--navy); }
+  @media (prefers-color-scheme: dark) { .card h2 { color:var(--gold); } }
   .stat-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:14px; }
   .stat { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px; text-align:center; box-shadow:var(--shadow); }
-  .stat .num { font-size:1.6rem; font-weight:800; color:var(--primary); }
+  .stat .num { font-size:1.6rem; font-weight:800; color:var(--navy); }
+  @media (prefers-color-scheme: dark) { .stat .num { color:var(--gold); } }
   .stat .lbl { font-size:.75rem; color:var(--text-dim); }
   label { display:block; font-size:.8rem; font-weight:600; color:var(--text-dim); margin:10px 0 4px; }
   input[type=text],input[type=password],input[type=date],select,textarea {
     width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:.95rem; font-family:inherit;
   }
   textarea { resize:vertical; min-height:60px; }
-  .btn { display:inline-block; background:var(--primary); color:#fff; border:none; padding:11px 18px; border-radius:10px; font-weight:700; font-size:.9rem; cursor:pointer; margin-top:12px; }
+  .btn { display:inline-block; background:var(--navy); color:#fff; border:none; padding:11px 18px; border-radius:10px; font-weight:700; font-size:.9rem; cursor:pointer; margin-top:12px; }
+  .btn.gold { background:var(--gold); color:#1a1a1a; }
   .btn.secondary { background:var(--surface-2); color:var(--text); border:1px solid var(--border); }
   .btn:disabled { opacity:.5; }
   .teacher-row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:12px 4px; border-bottom:1px solid var(--border); }
@@ -59,6 +64,7 @@
   .link-box { display:flex; gap:6px; align-items:center; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:8px 10px; margin-top:8px; font-size:.78rem; word-break:break-all; }
   .link-box button { flex:0 0 auto; }
   #loginScreen { max-width:340px; margin:60px auto; text-align:center; }
+  #loginScreen img.logo { width:70px; height:70px; border-radius:50%; box-shadow:0 0 0 3px var(--gold); margin-bottom:8px; }
 
   .scale-legend { font-size:.72rem; color:var(--text-dim); line-height:1.6; background:var(--surface-2); border-radius:10px; padding:10px 12px; margin-top:6px; }
   .qitem { border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:10px; background:var(--surface); }
@@ -73,17 +79,44 @@
   .rate-btn[data-r="1"].sel { background:var(--bad); border-color:var(--bad); color:#fff; }
   .qitem-comment { width:100%; padding:7px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:.8rem; }
   .progress-bar-wrap { background:var(--surface-2); border-radius:20px; height:8px; overflow:hidden; margin:8px 0 4px; }
-  .progress-bar { background:var(--primary); height:100%; transition:width .2s; }
+  .progress-bar { background:var(--navy); height:100%; transition:width .2s; }
+
+  details { margin-top:8px; }
+  summary { font-size:.8rem; color:var(--accent); cursor:pointer; font-weight:600; }
+  .cmp-row { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); font-size:.8rem; gap:8px; }
+  .cmp-row:last-child { border-bottom:none; }
+  .cmp-title { flex:1; }
+  .cmp-vals { display:flex; align-items:center; gap:6px; font-weight:800; white-space:nowrap; }
+  .cmp-up { color:var(--good); } .cmp-down { color:var(--bad); } .cmp-same { color:var(--text-dim); }
+  .cmp-summary { font-size:.82rem; padding:10px 12px; border-radius:10px; margin-bottom:8px; background:var(--surface-2); }
+
+  #reportArea { background:#fff; color:#111; border-radius:14px; padding:20px; box-shadow:var(--shadow); }
+  #reportArea h2, #reportArea h3 { color:#0d1b5e; }
+  #reportArea table { width:100%; border-collapse:collapse; font-size:.82rem; margin-top:8px; }
+  #reportArea th, #reportArea td { border:1px solid #ccc; padding:6px 8px; text-align:left; }
+  #reportArea th { background:#eef1f6; }
+  .report-header { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+  .report-header img { width:60px; height:60px; border-radius:50%; }
+  @media print {
+    nav.tabs, .no-print, header { display:none !important; }
+    body { background:#fff; }
+    main { max-width:100%; padding:0; }
+    #reportArea { box-shadow:none; border:none; }
+  }
 </style>
 </head>
 <body>
 <header>
-  <h1>🛠️ Maamulka — Qiimeynta Macallimiinta</h1>
-  <p>Bogga maamulaha — kaliya kuwa sirta haysta</p>
+  <img class="logo" src="/logo.jpg" alt="Dugsiga Howlwadaag Sare">
+  <div class="htext">
+    <h1>Dugsiga Howlwadaag Sare</h1>
+    <p>Maamulka — Qiimeynta Macallimiinta</p>
+  </div>
 </header>
 
 <div id="loginScreen" style="display:none;">
-  <div class="card">
+  <div class="card" style="text-align:center;">
+    <img class="logo" src="/logo.jpg" alt="logo">
     <h2>Gal Maamulka</h2>
     <label>Sirta (Password)</label>
     <input type="password" id="pwInput" placeholder="Geli sirta">
@@ -97,6 +130,7 @@
     <button data-tab="dashboard" class="active">Guddiga Guud</button>
     <button data-tab="teachers">Macallimiinta</button>
     <button data-tab="newEval">Qiimeyn Cusub</button>
+    <button data-tab="reports">Warbixin</button>
   </nav>
   <main id="app"><div class="loading">Soo dejinaya...</div></main>
 </div>
@@ -206,6 +240,44 @@
   function teacherOverallScore(id){ const e=teacherEvals(id); if(!e.length) return null; return e.reduce((a,x)=>a+Number(x.score),0)/e.length; }
   function escapeHtml(s){ return String(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
 
+  // ---------- Item-level comparison between two evaluations ----------
+  function compareItems(prevEval, currEval){
+    return CRITERIA.map(c=>{
+      const p = (prevEval.items||[]).find(it=>it.key===c.key);
+      const cur = (currEval.items||[]).find(it=>it.key===c.key);
+      const pr = p ? Number(p.rating) : null;
+      const cr = cur ? Number(cur.rating) : null;
+      let status = "same";
+      if (pr!==null && cr!==null){ if (cr>pr) status="up"; else if (cr<pr) status="down"; }
+      return { key:c.key, title:c.title, prev:pr, curr:cr, delta:(pr!==null&&cr!==null)?cr-pr:null, status };
+    });
+  }
+  function comparisonSummary(cmp){
+    const up = cmp.filter(c=>c.status==="up").length;
+    const down = cmp.filter(c=>c.status==="down").length;
+    const same = cmp.filter(c=>c.status==="same").length;
+    return { up, down, same };
+  }
+  function comparisonHtml(prevEval, currEval){
+    const cmp = compareItems(prevEval, currEval);
+    const s = comparisonSummary(cmp);
+    let summaryText;
+    if (s.up > s.down) summaryText = `📈 Guud ahaan macallinku wuxuu sameeyay HORUMAR — ${s.up} qodob ayaa kor u kacay, ${s.down} hoos u dhacay, ${s.same} isku mid ahaaday.`;
+    else if (s.down > s.up) summaryText = `📉 Guud ahaan macallinku wuxuu sameeyay HOOS U DHAC — ${s.down} qodob ayaa hoos u dhacay, ${s.up} kor u kacay, ${s.same} isku mid ahaaday.`;
+    else summaryText = `➖ Isbeddel weyn lama arag — ${s.up} kor u kacay, ${s.down} hoos u dhacay, ${s.same} isku mid ahaaday.`;
+
+    const rows = cmp.map(c=>{
+      let cls = "cmp-same", arrow = "▬", note = "Isku mid";
+      if (c.status==="up"){ cls="cmp-up"; arrow="▲"; note=`Horumar (+${c.delta})`; }
+      else if (c.status==="down"){ cls="cmp-down"; arrow="▼"; note=`Hoos u dhac (${c.delta})`; }
+      return `<div class="cmp-row">
+        <div class="cmp-title">${escapeHtml(c.title)}</div>
+        <div class="cmp-vals ${cls}">${c.prev!==null?c.prev:"—"} → ${c.curr!==null?c.curr:"—"} ${arrow} <span style="font-weight:600;font-size:.72rem;">${note}</span></div>
+      </div>`;
+    }).join("");
+    return `<div class="cmp-summary">${summaryText}</div>${rows}`;
+  }
+
   async function addTeacher(name, subject){
     const t = await api("/api/teachers", { method:"POST", body: JSON.stringify({name, subject}) });
     await loadAll();
@@ -225,6 +297,7 @@
     if (activeTab==="dashboard") return renderDashboard();
     if (activeTab==="teachers") return currentTeacherId ? renderTeacherDetail(currentTeacherId) : renderTeachers();
     if (activeTab==="newEval") return renderNewEval();
+    if (activeTab==="reports") return renderReports();
   }
 
   function renderDashboard(){
@@ -335,241 +408,3 @@
         if (confirm(`Ma hubtaa inaad tirtirto ${t?t.name:"macallinkan"} iyo dhammaan qiimeymihiisa?`)) await deleteTeacher(el.dataset.del);
       });
     });
-  }
-
-  function renderTeacherDetail(teacherId){
-    const t = teachers.find(x=>x.id===teacherId);
-    if (!t){ currentTeacherId=null; return renderTeachers(); }
-    const evs = teacherEvals(teacherId);
-    const overall = teacherOverallScore(teacherId);
-    const link = window.location.origin + "/t/" + t.token;
-
-    app.innerHTML = `
-      <button class="backbtn" id="backBtn">← Dib ugu noqo liiska</button>
-      <div class="card">
-        <h2>${escapeHtml(t.name)}</h2>
-        <div class="sub" style="color:var(--text-dim);margin-bottom:8px;">${escapeHtml(t.subject||"")}</div>
-        ${overall!==null ? `<span class="badge ${scoreBadgeClass(overall)}">Celceliska Guud: ${fmt1(overall)}% · ${overallLevel(overall)}</span>` : `<span class="badge neutral">Wali lama qiimeyn</span>`}
-        ${evs.length>=2 ? `<div class="chart-wrap"><canvas id="teacherChart"></canvas></div>` : ""}
-        ${evs.length<3 ? `<div class="compare-note pending">📌 Waxaad heysaa ${evs.length} qiimeyn. Ugu yaraan 3 ayaa loo baahan yahay si loo isbarbardhigo horumarka.</div>` : `<div class="compare-note ok">✅ ${evs.length} qiimeyn — waad isbarbardhigi kartaa horumarka.</div>`}
-        <label>🔗 Link-ga macallinku uu ula socon karo xogtiisa (u dir isaga)</label>
-        <div class="link-box"><span id="teacherLink">${link}</span><button class="btn secondary" id="copyLinkBtn" style="margin:0;padding:6px 10px;">Koobi</button></div>
-      </div>
-      <div class="card">
-        <h2>Taariikhda Qiimeymaha (${evs.length})</h2>
-        ${evs.length===0 ? `<div class="empty">Macallinkan wali lama qiimeynin.</div>` :
-        evs.slice().reverse().map(e=>{
-          const meta = e.meta || {};
-          return `<div class="eval-item">
-            <div class="row1"><span style="font-weight:700;font-size:.85rem;">${e.date}${meta.class?` · Fasalka ${escapeHtml(meta.class)}`:""}</span>
-              <span style="display:flex;align-items:center;gap:6px;"><span class="badge ${scoreBadgeClass(Number(e.score))}">${fmt1(Number(e.score))}%</span><button class="del-x" data-delev="${e.id}">✕</button></span>
-            </div>
-            <div class="notes-txt">${overallLevel(Number(e.score))}${meta.supervisorName?` · Kormeere: ${escapeHtml(meta.supervisorName)}`:""}</div>
-            ${meta.strengths || meta.improvements || meta.recommendations ? `<div class="notes-txt">📝 <a href="#" data-viewdetail="${e.id}" style="color:var(--accent);">Arag faallada guud iyo qorshaha dabagalka</a></div>` : ""}
-          </div>`;
-        }).join("")}
-      </div>
-      <div class="card">
-        <button class="btn secondary" id="goEvalBtn">➕ Ku Dar Qiimeyn Cusub oo ${escapeHtml(t.name)} ah</button>
-      </div>
-    `;
-    document.getElementById("backBtn").addEventListener("click", ()=>{ currentTeacherId=null; render(); });
-    document.getElementById("copyLinkBtn").addEventListener("click", ()=>{
-      navigator.clipboard.writeText(link).then(()=>{
-        const b = document.getElementById("copyLinkBtn"); b.textContent="La koobiyay ✓"; setTimeout(()=>b.textContent="Koobi",1500);
-      });
-    });
-    document.getElementById("goEvalBtn").addEventListener("click", ()=>{
-      document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.remove("active"));
-      document.querySelector('nav.tabs button[data-tab="newEval"]').classList.add("active");
-      activeTab = "newEval"; preselectTeacher = teacherId; render();
-    });
-    app.querySelectorAll("[data-delev]").forEach(el=>{
-      el.addEventListener("click", async ()=>{ if (confirm("Ma hubtaa inaad tirtirto qiimeyntan?")) await deleteEvaluation(el.dataset.delev); });
-    });
-    app.querySelectorAll("[data-viewdetail]").forEach(el=>{
-      el.addEventListener("click", (ev)=>{
-        ev.preventDefault();
-        const evalId = el.dataset.viewdetail;
-        const evalObj = evs.find(x=>x.id===evalId);
-        if (!evalObj) return;
-        const m = evalObj.meta || {};
-        let msg = `Qiimeynta ${evalObj.date}:\n\n`;
-        if (m.strengths) msg += `WANAAGSAN:\n${m.strengths}\n\n`;
-        if (m.improvements) msg += `U BAAHAN HORUMARIN:\n${m.improvements}\n\n`;
-        if (m.recommendations) msg += `TALOOYINKA KORMEERAHA:\n${m.recommendations}\n\n`;
-        if (m.followupArea || m.followupAction || m.followupDate) {
-          msg += `QORSHAHA DABAGALKA:\n`;
-          if (m.followupArea) msg += `Meesha: ${m.followupArea}\n`;
-          if (m.followupAction) msg += `Tallaabada: ${m.followupAction}\n`;
-          if (m.followupDate) msg += `Waqtiga: ${m.followupDate}\n`;
-        }
-        alert(msg || "Faallo lama gelin.");
-      });
-    });
-
-    if (evs.length>=2 && window.Chart){
-      const ctx = document.getElementById("teacherChart");
-      if (chartInstance){ chartInstance.destroy(); chartInstance=null; }
-      const cssVal = getComputedStyle(document.documentElement);
-      const textColor = cssVal.getPropertyValue('--text').trim()||'#333';
-      const gridColor = cssVal.getPropertyValue('--border').trim()||'#ddd';
-      chartInstance = new Chart(ctx, {
-        type:"line",
-        data:{
-          labels: evs.map(e=>e.date),
-          datasets: [
-            { label:"Celceliska Guud (%)", data: evs.map(e=>Number(e.score)), borderColor:"#1e6f5c", backgroundColor:"#1e6f5c", tension:.3, pointRadius:4, borderWidth:2 }
-          ]
-        },
-        options:{ responsive:true, maintainAspectRatio:false,
-          scales:{ y:{min:0,max:100,ticks:{color:textColor,stepSize:20},grid:{color:gridColor}}, x:{ticks:{color:textColor},grid:{color:gridColor}} },
-          plugins:{ legend:{labels:{color:textColor,boxWidth:10,font:{size:10}}} } }
-      });
-    }
-  }
-
-  function renderNewEval(){
-    const today = new Date().toISOString().slice(0,10);
-    if (teachers.length===0){
-      app.innerHTML = `<div class="card"><div class="empty">Marka hore ku dar macallin tab-ka "Macallimiinta".</div></div>`;
-      return;
-    }
-    evalState = {};
-    CRITERIA.forEach(c=>{ evalState[c.key] = { rating:null, comment:"" }; });
-
-    app.innerHTML = `
-      <div class="card">
-        <h2>Foomka Kormeerka iyo Qiimeynta Macallinka</h2>
-        <label>Dugsiga</label>
-        <input type="text" id="evalSchool" value="Dugsiga Howlwadaag Sare">
-        <label>Dooro Macallinka</label>
-        <select id="evalTeacherSel">
-          <option value="">— Dooro —</option>
-          ${teachers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(t=>`<option value="${t.id}" ${preselectTeacher===t.id?"selected":""}>${escapeHtml(t.name)}${t.subject?" — "+escapeHtml(t.subject):""}</option>`).join("")}
-        </select>
-        <label>Fasalka</label>
-        <input type="text" id="evalClass" placeholder="tusaale: Fasalka 5">
-        <label>Taariikhda Kormeerka</label>
-        <input type="date" id="evalDate" value="${today}">
-        <label>Magaca Kormeeraha</label>
-        <input type="text" id="evalSupervisor" placeholder="Magacaaga">
-        <div class="scale-legend">
-          <b>Heerarka Qiimeynta:</b><br>
-          5 = Heer Sare &nbsp; 4 = Wanaagsan &nbsp; 3 = La Aqbali Karo &nbsp; 2 = U Baahan Horumarin &nbsp; 1 = U Baahan Taageero Degdeg ah
-        </div>
-        <label>Progress-ka Buuxinta (<span id="progressCount">0</span>/${TOTAL_ITEMS})</label>
-        <div class="progress-bar-wrap"><div class="progress-bar" id="progressBar" style="width:0%;"></div></div>
-      </div>
-
-      <div id="itemsWrap"></div>
-
-      <div class="card">
-        <h2>Faallo Guud oo Kormeeraha</h2>
-        <label>Waxyaabaha uu macallinku ku wanaagsan yahay</label>
-        <textarea id="evalStrengths" placeholder="..."></textarea>
-        <label>Waxyaabaha u baahan horumarinta</label>
-        <textarea id="evalImprovements" placeholder="..."></textarea>
-        <label>Talooyinka Kormeeraha</label>
-        <textarea id="evalRecommendations" placeholder="..."></textarea>
-      </div>
-
-      <div class="card">
-        <h2>Qorshaha Dabagalka</h2>
-        <label>Meesha u baahan horumarinta</label>
-        <input type="text" id="evalFollowupArea" placeholder="...">
-        <label>Tallaabada la qaadayo</label>
-        <input type="text" id="evalFollowupAction" placeholder="...">
-        <label>Waqtiga dabagalka</label>
-        <input type="text" id="evalFollowupDate" placeholder="tusaale: 3 toddobaad">
-        <button class="btn" id="saveEvalBtn" disabled>💾 Kaydi Qiimeynta (buuxi 10-da su'aal marka hore)</button>
-      </div>
-    `;
-
-    const wrap = document.getElementById("itemsWrap");
-    CRITERIA.forEach(c=>{
-      const div = document.createElement("div");
-      div.className = "qitem";
-      div.innerHTML = `
-        <div class="qitem-title">${c.title}</div>
-        <div class="qitem-text">${escapeHtml(c.text)}</div>
-        <div class="rate-row">
-          <button class="rate-btn" data-r="5" data-item="${c.key}">5</button>
-          <button class="rate-btn" data-r="4" data-item="${c.key}">4</button>
-          <button class="rate-btn" data-r="3" data-item="${c.key}">3</button>
-          <button class="rate-btn" data-r="2" data-item="${c.key}">2</button>
-          <button class="rate-btn" data-r="1" data-item="${c.key}">1</button>
-        </div>
-        <input type="text" class="qitem-comment" data-comment="${c.key}" placeholder="Comment/Faallo (ikhtiyaari)">
-      `;
-      wrap.appendChild(div);
-    });
-
-    function updateProgress(){
-      let done = 0;
-      Object.values(evalState).forEach(v=>{ if (v.rating!==null) done++; });
-      document.getElementById("progressCount").textContent = done;
-      document.getElementById("progressBar").style.width = Math.round((done/TOTAL_ITEMS)*100)+"%";
-      const saveBtn = document.getElementById("saveEvalBtn");
-      if (done === TOTAL_ITEMS){
-        saveBtn.disabled = false;
-        saveBtn.textContent = "💾 Kaydi Qiimeynta";
-      } else {
-        saveBtn.disabled = true;
-        saveBtn.textContent = `💾 Kaydi Qiimeynta (${TOTAL_ITEMS-done} baaqi)`;
-      }
-    }
-
-    wrap.querySelectorAll(".rate-btn").forEach(btn=>{
-      btn.addEventListener("click", ()=>{
-        const key = btn.dataset.item;
-        const r = Number(btn.dataset.r);
-        evalState[key].rating = r;
-        wrap.querySelectorAll(`.rate-btn[data-item="${key}"]`).forEach(b=>b.classList.remove("sel"));
-        btn.classList.add("sel");
-        updateProgress();
-      });
-    });
-    wrap.querySelectorAll(".qitem-comment").forEach(inp=>{
-      inp.addEventListener("input", ()=>{
-        const key = inp.dataset.comment;
-        evalState[key].comment = inp.value;
-      });
-    });
-
-    document.getElementById("saveEvalBtn").addEventListener("click", async ()=>{
-      const teacherId = document.getElementById("evalTeacherSel").value;
-      const date = document.getElementById("evalDate").value;
-      if (!teacherId){ alert("Fadlan dooro macallin."); return; }
-      if (!date){ alert("Fadlan geli taariikhda."); return; }
-      const items = CRITERIA.map(c=>({ key:c.key, title:c.title, text:c.text, rating:evalState[c.key].rating, comment:evalState[c.key].comment }));
-      const meta = {
-        school: document.getElementById("evalSchool").value,
-        class: document.getElementById("evalClass").value,
-        supervisorName: document.getElementById("evalSupervisor").value,
-        strengths: document.getElementById("evalStrengths").value,
-        improvements: document.getElementById("evalImprovements").value,
-        recommendations: document.getElementById("evalRecommendations").value,
-        followupArea: document.getElementById("evalFollowupArea").value,
-        followupAction: document.getElementById("evalFollowupAction").value,
-        followupDate: document.getElementById("evalFollowupDate").value
-      };
-      const btn = document.getElementById("saveEvalBtn"); btn.disabled=true; btn.textContent="Kaydinaya...";
-      try {
-        await addEvaluation(teacherId, date, items, meta);
-        preselectTeacher = null; currentTeacherId = teacherId;
-        await loadAll();
-        document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.remove("active"));
-        document.querySelector('nav.tabs button[data-tab="teachers"]').classList.add("active");
-        activeTab = "teachers"; render();
-      } catch(e){ alert("Khalad ayaa dhacay: "+e.message); btn.disabled=false; btn.textContent="💾 Kaydi Qiimeynta"; }
-    });
-
-    updateProgress();
-  }
-
-  boot();
-})();
-</script>
-</body>
-</html>

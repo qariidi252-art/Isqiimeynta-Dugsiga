@@ -154,6 +154,7 @@
     <button data-tab="dashboard" class="active">Guddiga Guud</button>
     <button data-tab="teachers">Macallimiinta</button>
     <button data-tab="students">Ardayda</button>
+    <button data-tab="sow">📘 Scheme of Work</button>
     <button data-tab="newEval">Qiimeyn Cusub</button>
     <button data-tab="reports">Warbixin</button>
     <button id="logoutBtn" style="background:transparent;border:1px solid var(--bad);color:var(--bad);">⏻ Ka Bax</button>
@@ -203,6 +204,13 @@
   let completeReportClass = "__ALL__";
   let completeReportSection = "__ALL__";
   let studentSearchQuery = "";
+
+  // ---------- Scheme of Work state ----------
+  let sowTopics = [];
+  let sowSettings = {};
+  let sowView = "progress"; // progress | upload | settings
+  let sowSubject = null;
+  let sowClass = null;
 
   const app = document.getElementById("app");
   const PW_KEY = "qm_admin_pw";
@@ -256,13 +264,15 @@
       students = await api("/api/students");
       const subjRows = await api("/api/subjects");
       subjectCatalog = subjRows.map(s=>({ key: s.id, title: s.title }));
+      sowTopics = await api("/api/sow/topics");
+      sowSettings = await api("/api/sow/settings");
       render();
     } catch(e){ console.error(e); }
   }
 
   function logout(){
     localStorage.removeItem(PW_KEY);
-    teachers = []; evaluations = []; students = []; subjectCatalog = []; currentTeacherId = null; activeTab = "dashboard";
+    teachers = []; evaluations = []; students = []; subjectCatalog = []; sowTopics = []; sowSettings = {}; currentTeacherId = null; activeTab = "dashboard";
     document.querySelectorAll("nav.tabs button[data-tab]").forEach(b=>b.classList.remove("active"));
     document.querySelector('nav.tabs button[data-tab="dashboard"]').classList.add("active");
     showLogin();
@@ -352,6 +362,99 @@
   async function deleteStudent(id){ await api("/api/students/"+id, { method:"DELETE" }); if (assignStudentId===id) assignStudentId=null; await loadAll(); }
   async function addSubject(title){ await api("/api/subjects", { method:"POST", body: JSON.stringify({title}) }); await loadAll(); }
   async function deleteSubject(key){ await api("/api/subjects/"+key, { method:"DELETE" }); await loadAll(); }
+
+  // ---------- Scheme of Work helpers ----------
+  async function toggleSowTopic(id, done){ await api("/api/sow/topics/"+id+"/toggle", { method:"PUT", body: JSON.stringify({done}) }); await loadAll(); }
+  async function addSowTopic(t){ await api("/api/sow/topics", { method:"POST", body: JSON.stringify(t) }); await loadAll(); }
+  async function bulkSowTopics(payload){ const r = await api("/api/sow/topics/bulk", { method:"POST", body: JSON.stringify(payload) }); await loadAll(); return r; }
+  async function deleteSowTopic(id){ await api("/api/sow/topics/"+id, { method:"DELETE" }); await loadAll(); }
+  async function saveSowSettings(termStartDate){ await api("/api/sow/settings", { method:"PUT", body: JSON.stringify({termStartDate}) }); await loadAll(); }
+
+  function sowTopicsFor(subjectKey, className){
+    return sowTopics.filter(t=>t.subject_key===subjectKey && t.class_name===className).slice().sort((a,b)=>a.sort_order-b.sort_order);
+  }
+  function currentWeekNo(){
+    const d = sowSettings.term_start_date;
+    if (!d) return null;
+    const start = new Date(d+"T00:00:00");
+    if (isNaN(start.getTime())) return null;
+    const diffDays = Math.floor((new Date() - start)/86400000);
+    if (diffDays < 0) return 0;
+    return Math.floor(diffDays/7)+1;
+  }
+  function parseSowRows(raw){
+    const lines = raw.split("\n").map(l=>l.replace(/\r$/,"")).filter(l=>l.trim());
+    const rows = [];
+    for (const line of lines){
+      if (/week/i.test(line) && /(topic|lesson)/i.test(line)) continue; // header row
+      let cols = line.split("\t");
+      if (cols.length < 2) cols = line.split(",");
+      cols = cols.map(c=>c.trim());
+      let weekNo = null, topic;
+      if (cols.length >= 2 && /^\d+$/.test(cols[0])){
+        weekNo = Number(cols[0]);
+        topic = cols.slice(1).join(" ").trim();
+      } else {
+        topic = cols.join(" ").trim();
+      }
+      if (!topic) continue;
+      rows.push({ weekNo, topic });
+    }
+    return rows;
+  }
+  function detectSowHeaderMap(row){
+    if (!row) return null;
+    const norm = row.map(c=>String(c==null?"":c).toLowerCase().trim());
+    const find = (fragments)=>norm.findIndex(c=>fragments.some(f=>c.includes(f)));
+    const topicIdx = find(["topic","lesson","content","subtopic"]);
+    if (topicIdx===-1) return null;
+    const weekIdx = find(["week","wk"]);
+    return { week: weekIdx===-1?null:weekIdx, topic: topicIdx };
+  }
+  function rowsFromSowAoa(aoa){
+    if (!aoa || !aoa.length) return [];
+    let headerIdx=-1, map=null;
+    for (let i=0;i<Math.min(aoa.length,5);i++){
+      const m = detectSowHeaderMap(aoa[i]);
+      if (m){ headerIdx=i; map=m; break; }
+    }
+    if (!map) return [];
+    const rows = [];
+    for (let i=headerIdx+1;i<aoa.length;i++){
+      const r = aoa[i];
+      if (!r || !r.length) continue;
+      const topic = String(r[map.topic]==null?"":r[map.topic]).trim();
+      if (!topic) continue;
+      const weekRaw = map.week!=null ? String(r[map.week]==null?"":r[map.week]).trim() : "";
+      const weekNo = /^\d+$/.test(weekRaw) ? Number(weekRaw) : null;
+      rows.push({ weekNo, topic });
+    }
+    return rows;
+  }
+  function extractSowRowsFromFile(file){
+    return new Promise((resolve, reject)=>{
+      const name = (file.name||"").toLowerCase();
+      const isCsv = name.endsWith(".csv") || file.type==="text/csv";
+      const reader = new FileReader();
+      reader.onerror = ()=>reject(new Error("Ma suurtageli in la akhriyo file-ka."));
+      if (isCsv){
+        reader.onload = ()=>{ try { resolve(parseSowRows(String(reader.result||""))); } catch(e){ reject(e); } };
+        reader.readAsText(file);
+      } else {
+        reader.onload = ()=>{
+          try {
+            if (!window.XLSX) throw new Error("Maktabadda XLSX lama soo shubin.");
+            const data = new Uint8Array(reader.result);
+            const wb = XLSX.read(data, {type:"array"});
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const aoa = XLSX.utils.sheet_to_json(ws, {header:1, raw:false, defval:""});
+            resolve(rowsFromSowAoa(aoa));
+          } catch(e){ reject(e); }
+        };
+        reader.readAsArrayBuffer(file);
+      }
+    });
+  }
 
   function studentClasses(){ return Array.from(new Set(students.map(s=>s.class_name).filter(Boolean))).sort(); }
   function studentSections(className){ return Array.from(new Set(students.filter(s=>s.class_name===className).map(s=>s.section).filter(s=>s!=="" && s!=null))).sort(); }
@@ -464,6 +567,7 @@
     if (activeTab==="dashboard") return renderDashboard();
     if (activeTab==="teachers") return currentTeacherId ? renderTeacherDetail(currentTeacherId) : renderTeachers();
     if (activeTab==="students") return renderStudents();
+    if (activeTab==="sow") return renderSow();
     if (activeTab==="newEval") return renderNewEval();
     if (activeTab==="reports") return renderReports();
   }
@@ -1064,6 +1168,207 @@
         const s = students.find(x=>x.id===el.dataset.delst);
         if (confirm(`Ma hubtaa inaad tirtirto ${s?s.name:"ardaygan"}?`)) await deleteStudent(el.dataset.delst);
       });
+    });
+  }
+
+  // ---------- Scheme of Work tab ----------
+  function renderSow(){
+    app.innerHTML = `
+      <div class="subview-tabs no-print">
+        <button data-sowv="progress" class="${sowView==="progress"?"active":""}">📊 Xaaladda Casharada</button>
+        <button data-sowv="upload" class="${sowView==="upload"?"active":""}">📤 Soo Deji Scheme</button>
+        <button data-sowv="settings" class="${sowView==="settings"?"active":""}">⚙️ Dejinta Semester-ka</button>
+      </div>
+      <div id="sowBody"></div>
+    `;
+    app.querySelectorAll("[data-sowv]").forEach(b=>{
+      b.addEventListener("click", ()=>{ sowView = b.dataset.sowv; render(); });
+    });
+    const body = document.getElementById("sowBody");
+    if (sowView==="upload") renderSowUpload(body);
+    else if (sowView==="settings") renderSowSettings(body);
+    else renderSowProgress(body);
+  }
+
+  function renderSowProgress(body){
+    if (!subjectCatalog.length){
+      body.innerHTML = `<div class="card"><div class="empty">Marka hore ku dar maado (tab-ka Ardayda → 🎓 Maadooyinka Dugsiga).</div></div>`;
+      return;
+    }
+    const classes = studentClasses().length ? studentClasses() : ["Form 4"];
+    if (!sowSubject || !subjectCatalog.some(s=>s.key===sowSubject)) sowSubject = subjectCatalog[0].key;
+    if (!sowClass || !classes.includes(sowClass)) sowClass = classes[0];
+
+    const topics = sowTopicsFor(sowSubject, sowClass);
+    const total = topics.length;
+    const completed = topics.filter(t=>t.done).length;
+    const percent = total ? Math.round((completed/total)*100) : 0;
+    const week = currentWeekNo();
+    const overdue = week!=null ? topics.filter(t=>t.week_no!=null && t.week_no<=week && !t.done) : [];
+    const upcoming = topics.filter(t=>!t.done).slice(0,5);
+    const subjTitle = (subjectCatalog.find(s=>s.key===sowSubject)||{}).title || "";
+
+    body.innerHTML = `
+      <div class="card">
+        <h2>Dooro Maadada iyo Fasalka</h2>
+        <label>Maadada</label>
+        <select id="sowSubjectSel">${subjectCatalog.map(s=>`<option value="${escapeHtml(s.key)}" ${s.key===sowSubject?"selected":""}>${escapeHtml(s.title)}</option>`).join("")}</select>
+        <label>Fasalka</label>
+        <select id="sowClassSel">${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===sowClass?"selected":""}>${escapeHtml(c)}</option>`).join("")}</select>
+      </div>
+      ${total===0 ? `<div class="card"><div class="empty">Wali lama gelin Scheme of Work-ka "${escapeHtml(subjTitle)}" ee ${escapeHtml(sowClass)}. Tag "📤 Soo Deji Scheme" si aad u soo geliso.</div></div>` : `
+      <div class="card">
+        <h2>Xaaladda — ${escapeHtml(subjTitle)} (${escapeHtml(sowClass)})</h2>
+        <p style="font-size:.85rem;">Waxaad dhammaystay <b>${completed}/${total}</b> cashar (${percent}%)${week!=null?` · Toddobaadka hadda: <b>${week}</b>`:""}</p>
+        ${ week==null
+          ? `<div class="compare-note pending">⏳ Wali lama dejin taariikhda bilowga semester-ka — tag "⚙️ Dejinta Semester-ka" si loo ogaado halka aad jadwalka ka joogto.</div>`
+          : overdue.length>0
+            ? `<div class="compare-note pending">⚠️ Waad ka dib dhacsan tahay <b>${overdue.length}</b> cashar ee ay ahayd inaad dhammaystirto hadda. Waxaa laga rabaa inaad dhammaystirto:<br>${overdue.map(t=>`• ${escapeHtml(t.topic)}${t.week_no!=null?` (Toddobaad ${t.week_no})`:""}`).join("<br>")}</div>`
+            : `<div class="compare-note ok">✅ Waad la socotaa jadwalka Scheme of Work-ka. ${upcoming.length? `Casharada xiga ee ku sugaya: ${upcoming.map(t=>escapeHtml(t.topic)).join(", ")}.` : "Casharada oo dhan waa la dhammeeyay — waad dhammaystirtay Scheme of Work-ka!"}</div>`
+        }
+      </div>
+      <div class="card">
+        <h2>Liiska Casharada</h2>
+        ${topics.map(t=>`<div class="student-row" style="cursor:default;">
+          <div><div class="name">${t.week_no!=null?`<span style="color:var(--text-dim);font-weight:600;">W${t.week_no}</span> `:""}${escapeHtml(t.topic)}</div></div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button class="subj-chip ${t.done?'sel':''}" data-toggle="${t.id}">${t.done?'✓ Dhammaystiran':'Dhammee'}</button>
+            <button class="del-x" data-delsow="${t.id}" title="Tirtir">✕</button>
+          </div>
+        </div>`).join("")}
+      </div>
+      `}
+    `;
+    document.getElementById("sowSubjectSel").addEventListener("change",(e)=>{ sowSubject=e.target.value; render(); });
+    document.getElementById("sowClassSel").addEventListener("change",(e)=>{ sowClass=e.target.value; render(); });
+    body.querySelectorAll("[data-toggle]").forEach(el=>{
+      el.addEventListener("click", async ()=>{
+        const t = sowTopics.find(x=>x.id===el.dataset.toggle);
+        el.disabled = true;
+        try { await toggleSowTopic(el.dataset.toggle, !(t && t.done)); } finally { el.disabled = false; }
+      });
+    });
+    body.querySelectorAll("[data-delsow]").forEach(el=>{
+      el.addEventListener("click", async ()=>{
+        if (confirm("Ma hubtaa inaad tirtirto casharkan?")) await deleteSowTopic(el.dataset.delsow);
+      });
+    });
+  }
+
+  function renderSowUpload(body){
+    if (!subjectCatalog.length){
+      body.innerHTML = `<div class="card"><div class="empty">Marka hore ku dar maado (tab-ka Ardayda → 🎓 Maadooyinka Dugsiga).</div></div>`;
+      return;
+    }
+    const classes = studentClasses().length ? studentClasses() : ["Form 4"];
+    if (!sowSubject || !subjectCatalog.some(s=>s.key===sowSubject)) sowSubject = subjectCatalog[0].key;
+    if (!sowClass || !classes.includes(sowClass)) sowClass = classes[0];
+    const existing = sowTopicsFor(sowSubject, sowClass);
+
+    body.innerHTML = `
+      <div class="card">
+        <h2>Dooro Maadada iyo Fasalka</h2>
+        <label>Maadada</label>
+        <select id="sowSubjectSel2">${subjectCatalog.map(s=>`<option value="${escapeHtml(s.key)}" ${s.key===sowSubject?"selected":""}>${escapeHtml(s.title)}</option>`).join("")}</select>
+        <label>Fasalka</label>
+        <select id="sowClassSel2">${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===sowClass?"selected":""}>${escapeHtml(c)}</option>`).join("")}</select>
+      </div>
+      <div class="card">
+        <h2>📤 Soo Deji Scheme of Work (Excel/CSV)</h2>
+        <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">
+          File-ku waa in uu leeyahay tiirar "Week" iyo "Topic" (ama "Lesson"). Soo dejintani way <b>beddeshaa</b> Scheme of Work-kii hore ee maadadan iyo fasalkan.
+          ${existing.length ? ` Hadda waxaa jira ${existing.length} cashar oo la geliyay (${existing.filter(t=>t.done).length} dhammaystiran).` : ""}
+        </div>
+        <input type="file" id="sowFileInput" accept=".xlsx,.xls,.csv">
+        <div id="sowFileResult" style="font-size:.8rem;color:var(--text-dim);margin-top:8px;"></div>
+      </div>
+      <div class="card">
+        <h2>Ama ku dheji qoraal (Week{tab}Topic, hal xariiq walba)</h2>
+        <textarea id="sowPasteText" style="min-height:160px;" placeholder="1	Intro to Algebra
+2	Linear Equations
+3	Quadratic Equations"></textarea>
+        <button class="btn secondary" id="btnSowPaste">📋 Beddel Scheme-ka</button>
+        <div id="sowPasteResult" style="font-size:.8rem;color:var(--text-dim);margin-top:6px;"></div>
+      </div>
+      <div class="card">
+        <h2>➕ Ku Dar Hal Cashar</h2>
+        <label>Toddobaadka (ikhtiyaari)</label>
+        <input type="text" id="sowNewWeek" placeholder="tusaale: 4">
+        <label>Cashaarka / Mowduuca</label>
+        <input type="text" id="sowNewTopic" placeholder="tusaale: Quadratic Equations">
+        <button class="btn" id="btnSowAddOne">➕ Ku Dar</button>
+      </div>
+      <div class="card">
+        <h2>Casharada Jira (${existing.length})</h2>
+        ${existing.length===0 ? `<div class="empty">Wali cashar lama gelin.</div>` :
+        existing.map(t=>`<div class="student-row" style="cursor:default;">
+          <div class="name">${t.week_no!=null?`W${t.week_no} — `:""}${escapeHtml(t.topic)} ${t.done?'<span class="badge good">✓</span>':''}</div>
+          <button class="del-x" data-delsow2="${t.id}" title="Tirtir">✕</button>
+        </div>`).join("")}
+      </div>
+    `;
+    document.getElementById("sowSubjectSel2").addEventListener("change",(e)=>{ sowSubject=e.target.value; render(); });
+    document.getElementById("sowClassSel2").addEventListener("change",(e)=>{ sowClass=e.target.value; render(); });
+
+    document.getElementById("sowFileInput").addEventListener("change", async (e)=>{
+      const file = e.target.files[0];
+      if (!file) return;
+      const setMsg = (m)=>{ const d=document.getElementById("sowFileResult"); if (d) d.textContent = m; };
+      setMsg("⏳ Akhrinaya file-ka...");
+      try {
+        const rows = await extractSowRowsFromFile(file);
+        if (!rows.length){ setMsg("⚠️ Wax cashar ah lagama helin file-kan. Hubi tiirarka Week/Topic."); return; }
+        setMsg(`⏳ Waa la helay ${rows.length} cashar, geliyaa...`);
+        const r = await bulkSowTopics({ subjectKey: sowSubject, className: sowClass, rows });
+        setMsg(`✅ ${r.created} cashar ayaa loo geliyay Scheme of Work-ka.`);
+      } catch(err){ setMsg("⚠️ Khalad: " + (err && err.message ? err.message : "wax lama akhriyi karin file-ka.")); }
+    });
+
+    document.getElementById("btnSowPaste").addEventListener("click", async ()=>{
+      const raw = document.getElementById("sowPasteText").value;
+      const rows = parseSowRows(raw);
+      const setMsg = (m)=>{ const d=document.getElementById("sowPasteResult"); if (d) d.textContent = m; };
+      if (!rows.length){ setMsg("⚠️ Wax xog ah lama helin."); return; }
+      const btn = document.getElementById("btnSowPaste"); btn.disabled=true; btn.textContent="Kaydinaya...";
+      try {
+        const r = await bulkSowTopics({ subjectKey: sowSubject, className: sowClass, rows });
+        const d = document.getElementById("sowPasteResult"); if (d) d.textContent = `✅ ${r.created} cashar ayaa loo geliyay.`;
+      } finally { btn.disabled=false; btn.textContent="📋 Beddel Scheme-ka"; }
+    });
+
+    document.getElementById("btnSowAddOne").addEventListener("click", async ()=>{
+      const weekNo = document.getElementById("sowNewWeek").value.trim();
+      const topic = document.getElementById("sowNewTopic").value.trim();
+      if (!topic){ alert("Fadlan geli cashaarka."); return; }
+      const btn = document.getElementById("btnSowAddOne"); btn.disabled=true;
+      try { await addSowTopic({ subjectKey: sowSubject, className: sowClass, weekNo: weekNo||null, topic }); } finally { btn.disabled=false; }
+    });
+
+    body.querySelectorAll("[data-delsow2]").forEach(el=>{
+      el.addEventListener("click", async ()=>{
+        if (confirm("Ma hubtaa inaad tirtirto casharkan?")) await deleteSowTopic(el.dataset.delsow2);
+      });
+    });
+  }
+
+  function renderSowSettings(body){
+    const week = currentWeekNo();
+    body.innerHTML = `
+      <div class="card">
+        <h2>⚙️ Dejinta Semester-ka</h2>
+        <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">
+          Geli taariikhda ay ka bilaabatay semester-ka/term-ka si nidaamku u xisaabiyo toddobaadka hadda socda, oo uu kuu sheego halka aad joogto Scheme of Work marka loo eego jadwalka.
+        </div>
+        <label>Taariikhda Bilowga Semester-ka</label>
+        <input type="date" id="sowTermStart" value="${escapeHtml(sowSettings.term_start_date||"")}">
+        <button class="btn" id="btnSaveSowSettings">💾 Kaydi</button>
+        ${week!=null ? `<p style="font-size:.85rem;margin-top:10px;">Toddobaadka hadda socda ee semester-ka: <b>${week}</b></p>` : ""}
+      </div>
+    `;
+    document.getElementById("btnSaveSowSettings").addEventListener("click", async ()=>{
+      const val = document.getElementById("sowTermStart").value;
+      const btn = document.getElementById("btnSaveSowSettings"); btn.disabled=true;
+      try { await saveSowSettings(val); } finally { btn.disabled=false; }
     });
   }
 

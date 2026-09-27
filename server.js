@@ -5,6 +5,23 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const { Pool } = pkg;
+
+// ---------- Form 4 subjects (fixed list) ----------
+const SUBJECTS = [
+  { key: "mathematics", title: "Mathematics" },
+  { key: "physics", title: "Physics" },
+  { key: "chemistry", title: "Chemistry" },
+  { key: "biology", title: "Biology" },
+  { key: "english", title: "English" },
+  { key: "af_soomaali", title: "Af-Soomaali" },
+  { key: "arabic", title: "Arabic" },
+  { key: "history", title: "History" },
+  { key: "geography", title: "Geography" },
+  { key: "business_studies", title: "Business Studies" },
+  { key: "tarbiyo", title: "Tarbiyo" },
+  { key: "ict", title: "ICT" },
+];
+const SUBJECT_KEYS = SUBJECTS.map((s) => s.key);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json());
@@ -51,6 +68,19 @@ async function initDb() {
   await pool.query(`ALTER TABLE evaluations DROP COLUMN IF EXISTS prep`);
   await pool.query(`ALTER TABLE evaluations DROP COLUMN IF EXISTS classroom`);
   await pool.query(`ALTER TABLE evaluations DROP COLUMN IF EXISTS assessment`);
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS students (
+    id TEXT PRIMARY KEY,
+    adm_no TEXT DEFAULT '',
+    name TEXT NOT NULL,
+    gender TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    class_name TEXT NOT NULL,
+    section TEXT NOT NULL DEFAULT '',
+    subjects JSONB NOT NULL DEFAULT '[]',
+    created_at TIMESTAMPTZ DEFAULT now()
+  )`);
+
   console.log("✅ Database ready");
 }
 initDb().catch((e) => console.error("DB init error:", e));
@@ -198,6 +228,108 @@ app.post("/api/evaluations", requireAdmin, async (req, res) => {
 app.delete("/api/evaluations/:id", requireAdmin, async (req, res) => {
   try {
     await pool.query("DELETE FROM evaluations WHERE id=$1", [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+// ---------- Students & subjects (admin) ----------
+app.get("/api/subjects", requireAdmin, (req, res) => {
+  res.json(SUBJECTS);
+});
+
+app.get("/api/students", requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      "SELECT * FROM students ORDER BY class_name ASC, section ASC, name ASC"
+    );
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+app.post("/api/students", requireAdmin, async (req, res) => {
+  try {
+    const { admNo, name, gender, phone, className, section } = req.body || {};
+    if (!name || !name.trim()) return res.status(400).json({ error: "name required" });
+    if (!className || !className.trim()) return res.status(400).json({ error: "class required" });
+    const id = crypto.randomUUID();
+    await pool.query(
+      `INSERT INTO students (id, adm_no, name, gender, phone, class_name, section, subjects)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'[]')`,
+      [
+        id,
+        String(admNo || "").trim(),
+        name.trim(),
+        String(gender || "").trim(),
+        String(phone || "").trim(),
+        className.trim(),
+        String(section || "").trim(),
+      ]
+    );
+    res.json({ ok: true, id });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+app.post("/api/students/bulk", requireAdmin, async (req, res) => {
+  try {
+    const { rows } = req.body || {};
+    if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ error: "rows required" });
+    let created = 0;
+    for (const r of rows) {
+      const name = String((r && r.name) || "").trim();
+      const className = String((r && r.className) || "").trim();
+      if (!name || !className) continue;
+      const id = crypto.randomUUID();
+      await pool.query(
+        `INSERT INTO students (id, adm_no, name, gender, phone, class_name, section, subjects)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'[]')`,
+        [
+          id,
+          String((r && r.admNo) || "").trim(),
+          name,
+          String((r && r.gender) || "").trim(),
+          String((r && r.phone) || "").trim(),
+          className,
+          String((r && r.section) || "").trim(),
+        ]
+      );
+      created++;
+    }
+    res.json({ ok: true, created });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+app.put("/api/students/:id/subjects", requireAdmin, async (req, res) => {
+  try {
+    const { subjects } = req.body || {};
+    if (!Array.isArray(subjects)) return res.status(400).json({ error: "subjects must be an array" });
+    const clean = subjects.filter((s) => SUBJECT_KEYS.includes(s));
+    const { rowCount } = await pool.query(
+      "UPDATE students SET subjects=$1 WHERE id=$2",
+      [JSON.stringify(clean), req.params.id]
+    );
+    if (!rowCount) return res.status(404).json({ error: "not found" });
+    res.json({ ok: true, subjects: clean });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+app.delete("/api/students/:id", requireAdmin, async (req, res) => {
+  try {
+    await pool.query("DELETE FROM students WHERE id=$1", [req.params.id]);
     res.json({ ok: true });
   } catch (e) {
     console.error(e);

@@ -138,6 +138,8 @@
   </div>
 </header>
 
+<div id="bootLoading" style="padding:60px 16px;text-align:center;color:var(--text-dim);font-size:.9rem;">⏳ Soo dejinaya...</div>
+
 <div id="loginScreen" style="display:none;">
   <div class="card" style="text-align:center;">
     <img class="logo" src="/logo.jpg" alt="logo">
@@ -226,24 +228,48 @@
     return res.status === 204 ? null : res.json();
   }
 
+  function hideBootLoading(){
+    const b = document.getElementById("bootLoading");
+    if (b) b.style.display = "none";
+  }
   function showLogin(err){
+    hideBootLoading();
     document.getElementById("loginScreen").style.display = "block";
     document.getElementById("appShell").style.display = "none";
     document.getElementById("loginErr").textContent = err || "";
   }
   function showApp(){
+    hideBootLoading();
     document.getElementById("loginScreen").style.display = "none";
     document.getElementById("appShell").style.display = "block";
   }
 
+  // Fetch with a timeout so a slow/cold-starting server shows a message instead of leaving the screen blank forever.
+  async function fetchWithTimeout(url, opts, timeoutMs){
+    const controller = new AbortController();
+    const timer = setTimeout(()=>controller.abort(), timeoutMs || 20000);
+    try {
+      return await fetch(url, Object.assign({}, opts||{}, { signal: controller.signal }));
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   document.getElementById("loginBtn").addEventListener("click", async ()=>{
     const pw = document.getElementById("pwInput").value;
+    const btn = document.getElementById("loginBtn");
+    btn.disabled = true; btn.textContent = "Sugaya...";
+    document.getElementById("loginErr").textContent = "";
     try {
-      const res = await fetch("/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password: pw}) });
+      const res = await fetchWithTimeout("/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password: pw}) }, 20000);
       const j = await res.json();
       if (j.ok){ localStorage.setItem(PW_KEY, pw); showApp(); loadAll(); }
       else document.getElementById("loginErr").textContent = "Sirta waa qalad.";
-    } catch(e){ document.getElementById("loginErr").textContent = "Khalad server ah."; }
+    } catch(e){
+      document.getElementById("loginErr").textContent = (e && e.name==="AbortError")
+        ? "Server-ku wuu raagay inuu jawaabo — laga yaabee inuu hadda soo toosayo (cold start). Fadlan sug daqiiqad kadibna isku day mar kale."
+        : "Khalad server ah. Hubi internetka oo isku day mar kale.";
+    } finally { btn.disabled = false; btn.textContent = "Gal"; }
   });
   document.getElementById("pwInput").addEventListener("keydown", e=>{ if (e.key==="Enter") document.getElementById("loginBtn").click(); });
 
@@ -283,10 +309,14 @@
     const pw = getPw();
     if (!pw){ showLogin(); return; }
     try {
-      const res = await fetch("/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password: pw}) });
+      const res = await fetchWithTimeout("/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password: pw}) }, 20000);
       const j = await res.json();
       if (j.ok){ showApp(); loadAll(); } else showLogin();
-    } catch(e){ showLogin("Khalad xidhiidh server ah."); }
+    } catch(e){
+      showLogin(e && e.name==="AbortError"
+        ? "Server-ku wuu raagay inuu jawaabo — laga yaabee inuu hadda soo toosayo (cold start). Fadlan sug daqiiqad kadibna dib u geli."
+        : "Khalad xidhiidh server ah. Hubi internetka oo isku day mar kale.");
+    }
   }
 
   function fmt1(n){ return (Math.round(n*10)/10).toFixed(1); }
@@ -491,34 +521,12 @@
     });
   }
 
-  // Extract raw text from a Word (.docx) file.
-  function extractTextFromDocx(file){
-    return new Promise(async (resolve, reject)=>{
-      try {
-        if (!window.mammoth){
-          await loadScriptOnce("https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.2/mammoth.browser.min.js");
-        }
-      } catch(e){ reject(new Error("Maktabadda Word lama soo shubin. Hubi internetka.")); return; }
-      const reader = new FileReader();
-      reader.onerror = ()=>reject(new Error("Ma suurtageli in la akhriyo Word-ka."));
-      reader.onload = async ()=>{
-        try {
-          const result = await mammoth.extractRawText({ arrayBuffer: reader.result });
-          resolve(result && result.value ? result.value : "");
-        } catch(e){ reject(new Error("Ma suurtageli in la akhriyo Word-ka: " + (e && e.message ? e.message : e))); }
-      };
-      reader.readAsArrayBuffer(file);
-    });
-  }
-
   function extractSowRowsFromFile(file){
     const name = (file.name||"").toLowerCase();
     const isPdf = name.endsWith(".pdf") || file.type==="application/pdf";
-    const isDocx = name.endsWith(".docx") || file.type==="application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    const isDoc = name.endsWith(".doc") && !isDocx;
+    const isWord = name.endsWith(".doc") || name.endsWith(".docx");
     if (isPdf) return extractTextFromPdf(file).then(text=>parseSowRows(text));
-    if (isDoc) return Promise.reject(new Error("Qaabka .doc (Word-kii hore) lama taageerayo — kaydi file-ka sidii .docx kadibna isku day mar kale."));
-    if (isDocx) return extractTextFromDocx(file).then(text=>parseSowRows(text));
+    if (isWord) return Promise.reject(new Error("Qaabka Word (.doc/.docx) hadda lama taageerayo — fadlan isticmaal Excel, CSV ama PDF."));
     return new Promise((resolve, reject)=>{
       const isCsv = name.endsWith(".csv") || file.type==="text/csv";
       const reader = new FileReader();
@@ -1362,12 +1370,12 @@
         <select id="sowClassSel2">${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===sowClass?"selected":""}>${escapeHtml(c)}</option>`).join("")}</select>
       </div>
       <div class="card">
-        <h2>📤 Soo Deji Scheme of Work (Excel, CSV, PDF ama Word)</h2>
+        <h2>📤 Soo Deji Scheme of Work (Excel, CSV ama PDF)</h2>
         <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">
-          Excel/CSV waa in uu leeyahay tiirar "Week" iyo "Topic" (ama "Lesson"). PDF iyo Word (.docx) sidoo kale waa la aqbalaa — xariiq kasta ha ku qorneyd hal cashar, tusaale "1. Simple harmonic motion" ama "Toddobaad 1: Simple harmonic motion" (.doc-ga hore lama taageerayo, kaliya .docx). Soo dejintani way <b>beddeshaa</b> Scheme of Work-kii hore ee maadadan iyo fasalkan.
+          Excel/CSV waa in uu leeyahay tiirar "Week" iyo "Topic" (ama "Lesson"). PDF sidoo kale waa la aqbalaa — xariiq kasta ha ku qorneyd hal cashar, tusaale "1. Simple harmonic motion" ama "Toddobaad 1: Simple harmonic motion". Soo dejintani way <b>beddeshaa</b> Scheme of Work-kii hore ee maadadan iyo fasalkan.
           ${existing.length ? ` Hadda waxaa jira ${existing.length} cashar oo la geliyay (${existing.filter(t=>t.done).length} dhammaystiran).` : ""}
         </div>
-        <input type="file" id="sowFileInput" accept=".xlsx,.xls,.csv,.pdf,.docx">
+        <input type="file" id="sowFileInput" accept=".xlsx,.xls,.csv,.pdf">
         <div id="sowFileResult" style="font-size:.8rem;color:var(--text-dim);margin-top:8px;"></div>
       </div>
       <div class="card">
@@ -1786,11 +1794,4 @@
       printBtn.style.display = "none";
     });
     evalSel.addEventListener("change", ()=>{
-      reportEvalId = evalSel.value;
-      buildReport();
-    });
-    printBtn.addEventListener("click", ()=> window.print());
-
-    function buildReport(){
-      const area = document.getElementById("reportArea");
-      if (!reportTeacherId || !reportEvalId){ area.innerHTML=""; printBtn.style.display=
+      reportEvalI

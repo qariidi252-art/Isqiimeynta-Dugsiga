@@ -164,8 +164,6 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.2/mammoth.browser.min.js"></script>
 <script>
 (function(){
   "use strict";
@@ -441,15 +439,33 @@
     }
     return rows;
   }
+  // Load an external script only when actually needed (keeps normal page load light/fast).
+  const _loadedScripts = {};
+  function loadScriptOnce(url){
+    if (_loadedScripts[url]) return _loadedScripts[url];
+    _loadedScripts[url] = new Promise((resolve, reject)=>{
+      const s = document.createElement("script");
+      s.src = url;
+      s.onload = ()=>resolve();
+      s.onerror = ()=>{ delete _loadedScripts[url]; reject(new Error("Ma suurtageli in la soo shubo maktabadda ("+url+"). Hubi internetka.")); };
+      document.head.appendChild(s);
+    });
+    return _loadedScripts[url];
+  }
+
   // Extract text from a PDF by grouping text items into lines using their vertical position.
   function extractTextFromPdf(file){
-    return new Promise((resolve, reject)=>{
+    return new Promise(async (resolve, reject)=>{
+      try {
+        if (!window.pdfjsLib){
+          await loadScriptOnce("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js");
+        }
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+      } catch(e){ reject(new Error("Maktabadda PDF lama soo shubin. Hubi internetka.")); return; }
       const reader = new FileReader();
       reader.onerror = ()=>reject(new Error("Ma suurtageli in la akhriyo PDF-ka."));
       reader.onload = async ()=>{
         try {
-          if (!window.pdfjsLib) throw new Error("Maktabadda PDF lama soo shubin.");
-          pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
           const data = new Uint8Array(reader.result);
           const pdf = await pdfjsLib.getDocument({ data }).promise;
           let fullText = "";
@@ -477,12 +493,16 @@
 
   // Extract raw text from a Word (.docx) file.
   function extractTextFromDocx(file){
-    return new Promise((resolve, reject)=>{
+    return new Promise(async (resolve, reject)=>{
+      try {
+        if (!window.mammoth){
+          await loadScriptOnce("https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.2/mammoth.browser.min.js");
+        }
+      } catch(e){ reject(new Error("Maktabadda Word lama soo shubin. Hubi internetka.")); return; }
       const reader = new FileReader();
       reader.onerror = ()=>reject(new Error("Ma suurtageli in la akhriyo Word-ka."));
       reader.onload = async ()=>{
         try {
-          if (!window.mammoth) throw new Error("Maktabadda Word lama soo shubin.");
           const result = await mammoth.extractRawText({ arrayBuffer: reader.result });
           resolve(result && result.value ? result.value : "");
         } catch(e){ reject(new Error("Ma suurtageli in la akhriyo Word-ka: " + (e && e.message ? e.message : e))); }
@@ -1773,23 +1793,4 @@
 
     function buildReport(){
       const area = document.getElementById("reportArea");
-      if (!reportTeacherId || !reportEvalId){ area.innerHTML=""; printBtn.style.display="none"; return; }
-      const t = teachers.find(x=>x.id===reportTeacherId);
-      const evs = teacherEvals(reportTeacherId);
-      const idx = evs.findIndex(e=>e.id===reportEvalId);
-      if (idx===-1){ area.innerHTML=""; return; }
-      const e = evs[idx];
-      const prevEval = idx>0 ? evs[idx-1] : null;
-      const m = e.meta || {};
-      const score = Number(e.score);
-
-      area.innerHTML = `
-        <div class="report-header">
-          <img src="/logo.jpg" alt="logo">
-          <div>
-            <h2 style="margin:0;">${escapeHtml(m.school||"Dugsiga Howlwadaag Sare")}</h2>
-            <div style="font-size:.85rem;color:#555;">Foomka Kormeerka iyo Qiimeynta Macallinka</div>
-          </div>
-        </div>
-        <table>
-          <tr><th>Macallinka<
+      if (!reportTeacherId || !reportEvalId){ area.innerHTML=""; printBtn.style.display=

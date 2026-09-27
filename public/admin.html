@@ -1210,30 +1210,22 @@
     const percent = total ? Math.round((completed/total)*100) : 0;
     const week = currentWeekNo();
     const overdue = week!=null ? topics.filter(t=>t.week_no!=null && t.week_no<=week && !t.done) : [];
-    const upcoming = topics.filter(t=>!t.done).slice(0,5);
     const subjTitle = (subjectCatalog.find(s=>s.key===sowSubject)||{}).title || "";
+    const today = new Date().toLocaleDateString();
 
     body.innerHTML = `
-      <div class="card">
+      <div class="card no-print">
         <h2>Dooro Maadada iyo Fasalka</h2>
         <label>Maadada</label>
         <select id="sowSubjectSel">${subjectCatalog.map(s=>`<option value="${escapeHtml(s.key)}" ${s.key===sowSubject?"selected":""}>${escapeHtml(s.title)}</option>`).join("")}</select>
         <label>Fasalka</label>
         <select id="sowClassSel">${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===sowClass?"selected":""}>${escapeHtml(c)}</option>`).join("")}</select>
+        ${total>0 ? `<button class="btn gold" id="printSowBtn" style="margin-top:10px;">🖨️ Daabac / Deji Warbixinta Rasmiga ah (PDF)</button>` : ""}
       </div>
       ${total===0 ? `<div class="card"><div class="empty">Wali lama gelin Scheme of Work-ka "${escapeHtml(subjTitle)}" ee ${escapeHtml(sowClass)}. Tag "📤 Soo Deji Scheme" si aad u soo geliso.</div></div>` : `
-      <div class="card">
-        <h2>Xaaladda — ${escapeHtml(subjTitle)} (${escapeHtml(sowClass)})</h2>
-        <p style="font-size:.85rem;">Waxaad dhammaystay <b>${completed}/${total}</b> cashar (${percent}%)${week!=null?` · Toddobaadka hadda: <b>${week}</b>`:""}</p>
-        ${ week==null
-          ? `<div class="compare-note pending">⏳ Wali lama dejin taariikhda bilowga semester-ka — tag "⚙️ Dejinta Semester-ka" si loo ogaado halka aad jadwalka ka joogto.</div>`
-          : overdue.length>0
-            ? `<div class="compare-note pending">⚠️ Waad ka dib dhacsan tahay <b>${overdue.length}</b> cashar ee ay ahayd inaad dhammaystirto hadda. Waxaa laga rabaa inaad dhammaystirto:<br>${overdue.map(t=>`• ${escapeHtml(t.topic)}${t.week_no!=null?` (Toddobaad ${t.week_no})`:""}`).join("<br>")}</div>`
-            : `<div class="compare-note ok">✅ Waad la socotaa jadwalka Scheme of Work-ka. ${upcoming.length? `Casharada xiga ee ku sugaya: ${upcoming.map(t=>escapeHtml(t.topic)).join(", ")}.` : "Casharada oo dhan waa la dhammeeyay — waad dhammaystirtay Scheme of Work-ka!"}</div>`
-        }
-      </div>
-      <div class="card">
-        <h2>Liiska Casharada</h2>
+      <div class="card no-print">
+        <h2>Calaamadi Casharada</h2>
+        <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">Taabo "Dhammee" marka macalinku cashar dhammeeyo. Warbixinta rasmiga ah ee hoose ayaa si otomaatig ah u cusboonaysiin doonta.</div>
         ${topics.map(t=>`<div class="student-row" style="cursor:default;">
           <div><div class="name">${t.week_no!=null?`<span style="color:var(--text-dim);font-weight:600;">W${t.week_no}</span> `:""}${escapeHtml(t.topic)}</div></div>
           <div style="display:flex;align-items:center;gap:8px;">
@@ -1242,10 +1234,42 @@
           </div>
         </div>`).join("")}
       </div>
+      <div id="reportArea">
+        <div class="report-header">
+          <img src="/logo.jpg" alt="logo">
+          <div>
+            <h2 style="margin:0;">Dugsiga Howlwadaag Sare</h2>
+            <div style="font-size:.85rem;color:#555;">Warbixinta Rasmiga ah — Scheme of Work — ${escapeHtml(subjTitle)} (${escapeHtml(sowClass)})</div>
+          </div>
+        </div>
+        <p style="font-size:.85rem;">Taariikhda Warbixinta: <b>${today}</b>${week!=null?` · Toddobaadka Hadda ee Semester-ka: <b>${week}</b>`:""}</p>
+        <p style="font-size:.85rem;">Wadarta Casharada: <b>${total}</b> · Waxaa Dhammaystay: <b>${completed}</b> (${percent}%) · Waxaa Hadhay: <b>${total-completed}</b></p>
+        ${ week==null
+          ? `<p style="font-size:.85rem;"><i>Wali lama dejin taariikhda bilowga semester-ka (tag "⚙️ Dejinta Semester-ka"), ee jadwalka Scheme of Work-ka lama isbarbardhigi karin.</i></p>`
+          : overdue.length>0
+            ? `<p style="font-size:.85rem;"><b style="color:#c0392b;">⚠️ Waad ka dib dhacsan tahay ${overdue.length} cashar.</b> Faahfaahinta hoose ayaa muujinaysa casharada gaar ahaan.</p>`
+            : `<p style="font-size:.85rem;"><b style="color:#1e8e5a;">✅ Waad la socotaa jadwalka rasmiga ah ee Scheme of Work-ka.</b></p>`
+        }
+        <table>
+          <thead><tr><th style="width:8%;">#</th><th style="width:14%;">Toddobaad</th><th>Cinwaanka Cashaarka</th><th style="width:26%;">Xaalada</th></tr></thead>
+          <tbody>
+            ${topics.map((t,i)=>{
+              let statusTxt;
+              if (t.done) statusTxt = `<span class="yes">✓ Dhammaystiran</span>`;
+              else if (week!=null && t.week_no!=null && t.week_no<=week) statusTxt = `<span class="no">⚠️ Dib U Dhacay</span>`;
+              else if (t.week_no!=null) statusTxt = `🕒 Weli Lama Gaadhin`;
+              else statusTxt = `— Toddobaad Lama Qorin`;
+              return `<tr><td>${i+1}</td><td>${t.week_no!=null?t.week_no:"—"}</td><td>${escapeHtml(t.topic)}</td><td>${statusTxt}</td></tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
       `}
     `;
     document.getElementById("sowSubjectSel").addEventListener("change",(e)=>{ sowSubject=e.target.value; render(); });
     document.getElementById("sowClassSel").addEventListener("change",(e)=>{ sowClass=e.target.value; render(); });
+    const printBtn = document.getElementById("printSowBtn");
+    if (printBtn) printBtn.addEventListener("click", ()=>window.print());
     body.querySelectorAll("[data-toggle]").forEach(el=>{
       el.addEventListener("click", async ()=>{
         const t = sowTopics.find(x=>x.id===el.dataset.toggle);
@@ -1299,27 +1323,53 @@
       const t = sowSearchSelectedTopicId ? sowTopics.find(x=>x.id===sowSearchSelectedTopicId) : null;
       if (!t){ area.innerHTML = ""; return; }
       const week = currentWeekNo();
-      let statusHtml;
+      const today = new Date().toLocaleDateString();
+      let statusRow, statusNote;
       if (week==null){
-        statusHtml = `<div class="compare-note pending">⏳ Wali lama dejin taariikhda bilowga semester-ka — tag "⚙️ Dejinta Semester-ka".</div>`;
+        statusRow = `— Lama Xisaabin Karo`;
+        statusNote = `<p style="font-size:.85rem;"><i>Wali lama dejin taariikhda bilowga semester-ka (tag "⚙️ Dejinta Semester-ka").</i></p>`;
       } else if (t.week_no==null){
-        statusHtml = `<div class="compare-note pending">ℹ️ Casharkan lama qorin toddobaadkiisa Scheme of Work-ka, ee lama xisaabin karo in uu dib dhacsan yahay iyo in kale.</div>`;
+        statusRow = `— Toddobaad Lama Qorin`;
+        statusNote = `<p style="font-size:.85rem;"><i>Casharkan lama qorin toddobaadkiisa Scheme of Work-ka.</i></p>`;
       } else if (t.done){
-        statusHtml = `<div class="compare-note ok">✅ Casharkan macalinku wuu dhammeeyay (target-kiisu wuxuu ku beegnaa Toddobaad ${t.week_no}).</div>`;
+        statusRow = `<span class="yes">✓ Macalinku Wuu Dhammeeyay</span>`;
+        statusNote = "";
       } else if (t.week_no <= week){
         const behind = week - t.week_no;
-        statusHtml = `<div class="compare-note pending">⚠️ Macalinku weli ma dhammaynin casharkan. Target-ka Scheme of Work-ku wuxuu ahaa in casharkan la dhammeeyo Toddobaad ${t.week_no}, hadda waxaan ku jirnaa Toddobaad ${week} — dib u dhac ${behind} toddobaad ah.</div>`;
+        statusRow = `<span class="no">⚠️ Dib U Dhacay (${behind} Toddobaad)</span>`;
+        statusNote = `<p style="font-size:.85rem;"><b style="color:#c0392b;">⚠️ Macalinku weli ma dhammaynin casharkan.</b> Target-ka Scheme of Work-ku wuxuu ahaa in la dhammeeyo Toddobaad ${t.week_no}, hadda waxaan ku jirnaa Toddobaad ${week}.</p>`;
       } else {
-        statusHtml = `<div class="compare-note ok">🕒 Weli lama gaadhin casharkan — target-kiisu wuxuu ku beegan yahay Toddobaad ${t.week_no}, hadda waxaan ku jirnaa Toddobaad ${week}. Waad la socotaa jadwalka.</div>`;
+        statusRow = `🕒 Weli Lama Gaadhin`;
+        statusNote = `<p style="font-size:.85rem;"><b style="color:#1e8e5a;">🕒 Weli lama gaadhin casharkan</b> — waad la socotaa jadwalka.</p>`;
       }
       area.innerHTML = `
-        <div class="card">
-          <h2>${escapeHtml(subjTitle)} — ${escapeHtml(cls)}</h2>
-          <p style="font-size:.85rem;"><b>${escapeHtml(t.topic)}</b>${t.week_no!=null?` · Target-ka Toddobaadka: <b>${t.week_no}</b>`:""}${week!=null?` · Toddobaadka hadda: <b>${week}</b>`:""}</p>
-          ${statusHtml}
+        <div class="card no-print">
+          <button class="btn gold" id="printSowSearchBtn">🖨️ Daabac / Deji Warbixinta Rasmiga ah (PDF)</button>
+        </div>
+        <div id="reportArea">
+          <div class="report-header">
+            <img src="/logo.jpg" alt="logo">
+            <div>
+              <h2 style="margin:0;">Dugsiga Howlwadaag Sare</h2>
+              <div style="font-size:.85rem;color:#555;">Warbixinta Rasmiga ah — Cashar Gaar ah — ${escapeHtml(subjTitle)} (${escapeHtml(cls)})</div>
+            </div>
+          </div>
+          <p style="font-size:.85rem;">Taariikhda Warbixinta: <b>${today}</b></p>
+          <table>
+            <tbody>
+              <tr><th style="width:35%;">Cinwaanka Cashaarka</th><td>${escapeHtml(t.topic)}</td></tr>
+              <tr><th>Toddobaadka la Qorsheeyay (Target)</th><td>${t.week_no!=null?t.week_no:"Lama qorin"}</td></tr>
+              <tr><th>Toddobaadka Hadda ee Semester-ka</th><td>${week!=null?week:"Lama dejin"}</td></tr>
+              <tr><th>Xaalada</th><td>${statusRow}</td></tr>
+            </tbody>
+          </table>
+          ${statusNote}
+        </div>
+        <div class="card no-print" style="margin-top:12px;">
           <button class="subj-chip ${t.done?'sel':''}" id="btnSowSearchToggle">${t.done?'✕ Ka Saar Calaamadda':'💾 Kaydi — Macalinku Wuu Dhammeeyay'}</button>
         </div>
       `;
+      document.getElementById("printSowSearchBtn").addEventListener("click", ()=>window.print());
       document.getElementById("btnSowSearchToggle").addEventListener("click", async ()=>{
         const btn = document.getElementById("btnSowSearchToggle"); btn.disabled=true;
         try { await toggleSowTopic(t.id, !t.done); } finally { btn.disabled=false; }

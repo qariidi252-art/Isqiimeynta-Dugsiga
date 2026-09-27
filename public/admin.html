@@ -212,7 +212,6 @@
   let sowSubject = null;
   let sowClass = null;
   let sowSearchSubject = null;
-  let sowSearchQuery = "";
   let sowSearchSelectedTopicId = null;
 
   const app = document.getElementById("app");
@@ -1180,7 +1179,7 @@
     app.innerHTML = `
       <div class="subview-tabs no-print">
         <button data-sowv="progress" class="${sowView==="progress"?"active":""}">📊 Xaaladda Casharada</button>
-        <button data-sowv="search" class="${sowView==="search"?"active":""}">🔎 Raadi Cashar</button>
+        <button data-sowv="search" class="${sowView==="search"?"active":""}">🔎 Xulo Cashaarka</button>
         <button data-sowv="upload" class="${sowView==="upload"?"active":""}">📤 Soo Deji Scheme</button>
         <button data-sowv="settings" class="${sowView==="settings"?"active":""}">⚙️ Dejinta Semester-ka</button>
       </div>
@@ -1270,45 +1269,30 @@
     if (!sowSearchSubject || !subjectCatalog.some(s=>s.key===sowSearchSubject)) sowSearchSubject = subjectCatalog[0].key;
     const cls = classes.length===1 ? classes[0] : (sowClass && classes.includes(sowClass) ? sowClass : classes[0]);
     const subjTitle = (subjectCatalog.find(s=>s.key===sowSearchSubject)||{}).title || "";
+    const topics = sowTopicsFor(sowSearchSubject, cls);
+    if (sowSearchSelectedTopicId && !topics.some(t=>t.id===sowSearchSelectedTopicId)) sowSearchSelectedTopicId = null;
 
     body.innerHTML = `
       <div class="card">
-        <h2>🔎 Raadi Cashar — Hel Xaaladdiisa Scheme of Work-ka</h2>
+        <h2>🔎 Xulo Cashaarka — Hel Xaaladdiisa Scheme of Work-ka</h2>
         <label>Maadada</label>
         <select id="sowSearchSubjectSel">${subjectCatalog.map(s=>`<option value="${escapeHtml(s.key)}" ${s.key===sowSearchSubject?"selected":""}>${escapeHtml(s.title)}</option>`).join("")}</select>
         ${classes.length>1 ? `<label>Fasalka</label><select id="sowSearchClassSel">${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===cls?"selected":""}>${escapeHtml(c)}</option>`).join("")}</select>` : ""}
         <label>Cinwaanka Cashaarka</label>
-        <input type="text" id="sowSearchInput" placeholder="tusaale: Simple harmonic motion; period in SHM" value="${escapeHtml(sowSearchQuery)}">
-        <div id="sowSearchResults"></div>
+        ${topics.length===0 ? `<div class="empty">Wali lama gelin Scheme of Work-ka "${escapeHtml(subjTitle)}" — ${escapeHtml(cls)}. Tag "📤 Soo Deji Scheme" si aad u soo geliso.</div>` : `
+        <select id="sowSearchSelect">
+          <option value="">— Dooro cinwaanka casharka —</option>
+          ${topics.map(t=>`<option value="${t.id}" ${t.id===sowSearchSelectedTopicId?"selected":""}>${t.week_no!=null?`W${t.week_no} — `:""}${escapeHtml(t.topic)}${t.done?" ✓":""}</option>`).join("")}
+        </select>
+        `}
       </div>
       <div id="sowSearchReport"></div>
     `;
-    document.getElementById("sowSearchSubjectSel").addEventListener("change",(e)=>{ sowSearchSubject=e.target.value; sowSearchSelectedTopicId=null; sowSearchQuery=""; render(); });
+    document.getElementById("sowSearchSubjectSel").addEventListener("change",(e)=>{ sowSearchSubject=e.target.value; sowSearchSelectedTopicId=null; render(); });
     const clsSel = document.getElementById("sowSearchClassSel");
     if (clsSel) clsSel.addEventListener("change",(e)=>{ sowClass=e.target.value; sowSearchSelectedTopicId=null; render(); });
-
-    const input = document.getElementById("sowSearchInput");
-    const resultsBox = document.getElementById("sowSearchResults");
-    const norm = (s)=>String(s||"").toLowerCase().trim();
-
-    function renderResults(){
-      const q = norm(sowSearchQuery);
-      if (!q){ resultsBox.innerHTML = ""; return; }
-      const topics = sowTopicsFor(sowSearchSubject, cls);
-      const matches = topics.filter(t=>{
-        const nt = norm(t.topic);
-        return nt.includes(q) || q.includes(nt);
-      }).slice(0,10);
-      resultsBox.innerHTML = matches.length ? matches.map(t=>`<div class="student-row" data-picktopic="${t.id}">
-        <div><div class="name">${t.week_no!=null?`<span style="color:var(--text-dim);font-weight:600;">W${t.week_no}</span> `:""}${escapeHtml(t.topic)}</div></div>
-        <span class="badge ${t.done?'good':'bad'}">${t.done?'✓ Dhammaystiran':'Lama dhammayn'}</span>
-      </div>`).join("") : `<div class="empty">Wax cashar la mid ah lama helin Scheme of Work-ka "${escapeHtml(subjTitle)}" — ${escapeHtml(cls)}.</div>`;
-      resultsBox.querySelectorAll("[data-picktopic]").forEach(el=>{
-        el.addEventListener("click", ()=>{ sowSearchSelectedTopicId = el.dataset.picktopic; renderReport(); });
-      });
-    }
-    input.addEventListener("input", (e)=>{ sowSearchQuery = e.target.value; sowSearchSelectedTopicId=null; renderResults(); renderReport(); });
-    renderResults();
+    const topicSel = document.getElementById("sowSearchSelect");
+    if (topicSel) topicSel.addEventListener("change",(e)=>{ sowSearchSelectedTopicId = e.target.value || null; renderReport(); });
 
     function renderReport(){
       const area = document.getElementById("sowSearchReport");
@@ -1321,19 +1305,19 @@
       } else if (t.week_no==null){
         statusHtml = `<div class="compare-note pending">ℹ️ Casharkan lama qorin toddobaadkiisa Scheme of Work-ka, ee lama xisaabin karo in uu dib dhacsan yahay iyo in kale.</div>`;
       } else if (t.done){
-        statusHtml = `<div class="compare-note ok">✅ Casharkan waa la dhammeeyay (wuxuu ku beegnaa Toddobaad ${t.week_no}).</div>`;
+        statusHtml = `<div class="compare-note ok">✅ Casharkan macalinku wuu dhammeeyay (target-kiisu wuxuu ku beegnaa Toddobaad ${t.week_no}).</div>`;
       } else if (t.week_no <= week){
         const behind = week - t.week_no;
-        statusHtml = `<div class="compare-note pending">⚠️ Waad ka dib dhacsan tahay casharkan. Wuxuu ku beegnaa Toddobaad ${t.week_no}, hadda waxaan ku jirnaa Toddobaad ${week} — dib u dhac ${behind} toddobaad ah.</div>`;
+        statusHtml = `<div class="compare-note pending">⚠️ Macalinku weli ma dhammaynin casharkan. Target-ka Scheme of Work-ku wuxuu ahaa in casharkan la dhammeeyo Toddobaad ${t.week_no}, hadda waxaan ku jirnaa Toddobaad ${week} — dib u dhac ${behind} toddobaad ah.</div>`;
       } else {
-        statusHtml = `<div class="compare-note ok">🕒 Weli lama gaadhin casharkan — wuxuu ku beegan yahay Toddobaad ${t.week_no}, hadda waxaan ku jirnaa Toddobaad ${week}. Waad la socotaa jadwalka.</div>`;
+        statusHtml = `<div class="compare-note ok">🕒 Weli lama gaadhin casharkan — target-kiisu wuxuu ku beegan yahay Toddobaad ${t.week_no}, hadda waxaan ku jirnaa Toddobaad ${week}. Waad la socotaa jadwalka.</div>`;
       }
       area.innerHTML = `
         <div class="card">
           <h2>${escapeHtml(subjTitle)} — ${escapeHtml(cls)}</h2>
-          <p style="font-size:.85rem;"><b>${escapeHtml(t.topic)}</b>${t.week_no!=null?` · Toddobaadka la qorsheeyay: <b>${t.week_no}</b>`:""}${week!=null?` · Toddobaadka hadda: <b>${week}</b>`:""}</p>
+          <p style="font-size:.85rem;"><b>${escapeHtml(t.topic)}</b>${t.week_no!=null?` · Target-ka Toddobaadka: <b>${t.week_no}</b>`:""}${week!=null?` · Toddobaadka hadda: <b>${week}</b>`:""}</p>
           ${statusHtml}
-          <button class="subj-chip ${t.done?'sel':''}" id="btnSowSearchToggle">${t.done?'✕ Ka Saar Calaamadda':'✓ Calaamadi Dhammaystiran'}</button>
+          <button class="subj-chip ${t.done?'sel':''}" id="btnSowSearchToggle">${t.done?'✕ Ka Saar Calaamadda':'💾 Kaydi — Macalinku Wuu Dhammeeyay'}</button>
         </div>
       `;
       document.getElementById("btnSowSearchToggle").addEventListener("click", async ()=>{

@@ -164,6 +164,8 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.2/mammoth.browser.min.js"></script>
 <script>
 (function(){
   "use strict";
@@ -396,7 +398,14 @@
         weekNo = Number(cols[0]);
         topic = cols.slice(1).join(" ").trim();
       } else {
-        topic = cols.join(" ").trim();
+        // Loosely-formatted lines (common when text comes from a PDF or Word file):
+        // "Week 1: Topic", "Week 1 - Topic", "1. Topic", "1) Topic", "1 - Topic", "1   Topic"
+        const trimmed = line.trim();
+        const wkMatch = trimmed.match(/^(?:week|wk|toddobaad(?:ka)?)\s*#?\s*(\d{1,2})\s*[:\-.)]?\s+(.+)$/i);
+        const numMatch = !wkMatch ? trimmed.match(/^(\d{1,2})\s*[-.):]?\s+(.+)$/) : null;
+        if (wkMatch){ weekNo = Number(wkMatch[1]); topic = wkMatch[2].trim(); }
+        else if (numMatch){ weekNo = Number(numMatch[1]); topic = numMatch[2].trim(); }
+        else { topic = cols.join(" ").trim(); }
       }
       if (!topic) continue;
       rows.push({ weekNo, topic });
@@ -432,9 +441,65 @@
     }
     return rows;
   }
-  function extractSowRowsFromFile(file){
+  // Extract text from a PDF by grouping text items into lines using their vertical position.
+  function extractTextFromPdf(file){
     return new Promise((resolve, reject)=>{
-      const name = (file.name||"").toLowerCase();
+      const reader = new FileReader();
+      reader.onerror = ()=>reject(new Error("Ma suurtageli in la akhriyo PDF-ka."));
+      reader.onload = async ()=>{
+        try {
+          if (!window.pdfjsLib) throw new Error("Maktabadda PDF lama soo shubin.");
+          pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+          const data = new Uint8Array(reader.result);
+          const pdf = await pdfjsLib.getDocument({ data }).promise;
+          let fullText = "";
+          for (let p=1;p<=pdf.numPages;p++){
+            const page = await pdf.getPage(p);
+            const content = await page.getTextContent();
+            const byLine = {};
+            content.items.forEach(it=>{
+              const y = Math.round(it.transform[5]);
+              if (!byLine[y]) byLine[y] = [];
+              byLine[y].push({ str: it.str, x: it.transform[4] });
+            });
+            const ys = Object.keys(byLine).map(Number).sort((a,b)=>b-a); // top -> bottom
+            ys.forEach(y=>{
+              const line = byLine[y].sort((a,b)=>a.x-b.x).map(it=>it.str).join(" ").replace(/\s+/g," ").trim();
+              if (line) fullText += line + "\n";
+            });
+          }
+          resolve(fullText);
+        } catch(e){ reject(new Error("Ma suurtageli in la akhriyo PDF-ka: " + (e && e.message ? e.message : e))); }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  // Extract raw text from a Word (.docx) file.
+  function extractTextFromDocx(file){
+    return new Promise((resolve, reject)=>{
+      const reader = new FileReader();
+      reader.onerror = ()=>reject(new Error("Ma suurtageli in la akhriyo Word-ka."));
+      reader.onload = async ()=>{
+        try {
+          if (!window.mammoth) throw new Error("Maktabadda Word lama soo shubin.");
+          const result = await mammoth.extractRawText({ arrayBuffer: reader.result });
+          resolve(result && result.value ? result.value : "");
+        } catch(e){ reject(new Error("Ma suurtageli in la akhriyo Word-ka: " + (e && e.message ? e.message : e))); }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function extractSowRowsFromFile(file){
+    const name = (file.name||"").toLowerCase();
+    const isPdf = name.endsWith(".pdf") || file.type==="application/pdf";
+    const isDocx = name.endsWith(".docx") || file.type==="application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    const isDoc = name.endsWith(".doc") && !isDocx;
+    if (isPdf) return extractTextFromPdf(file).then(text=>parseSowRows(text));
+    if (isDoc) return Promise.reject(new Error("Qaabka .doc (Word-kii hore) lama taageerayo — kaydi file-ka sidii .docx kadibna isku day mar kale."));
+    if (isDocx) return extractTextFromDocx(file).then(text=>parseSowRows(text));
+    return new Promise((resolve, reject)=>{
       const isCsv = name.endsWith(".csv") || file.type==="text/csv";
       const reader = new FileReader();
       reader.onerror = ()=>reject(new Error("Ma suurtageli in la akhriyo file-ka."));
@@ -1277,12 +1342,12 @@
         <select id="sowClassSel2">${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===sowClass?"selected":""}>${escapeHtml(c)}</option>`).join("")}</select>
       </div>
       <div class="card">
-        <h2>📤 Soo Deji Scheme of Work (Excel/CSV)</h2>
+        <h2>📤 Soo Deji Scheme of Work (Excel, CSV, PDF ama Word)</h2>
         <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">
-          File-ku waa in uu leeyahay tiirar "Week" iyo "Topic" (ama "Lesson"). Soo dejintani way <b>beddeshaa</b> Scheme of Work-kii hore ee maadadan iyo fasalkan.
+          Excel/CSV waa in uu leeyahay tiirar "Week" iyo "Topic" (ama "Lesson"). PDF iyo Word (.docx) sidoo kale waa la aqbalaa — xariiq kasta ha ku qorneyd hal cashar, tusaale "1. Simple harmonic motion" ama "Toddobaad 1: Simple harmonic motion" (.doc-ga hore lama taageerayo, kaliya .docx). Soo dejintani way <b>beddeshaa</b> Scheme of Work-kii hore ee maadadan iyo fasalkan.
           ${existing.length ? ` Hadda waxaa jira ${existing.length} cashar oo la geliyay (${existing.filter(t=>t.done).length} dhammaystiran).` : ""}
         </div>
-        <input type="file" id="sowFileInput" accept=".xlsx,.xls,.csv">
+        <input type="file" id="sowFileInput" accept=".xlsx,.xls,.csv,.pdf,.docx">
         <div id="sowFileResult" style="font-size:.8rem;color:var(--text-dim);margin-top:8px;"></div>
       </div>
       <div class="card">
@@ -1727,53 +1792,4 @@
           </div>
         </div>
         <table>
-          <tr><th>Macallinka</th><td>${escapeHtml(t.name)}</td><th>Maaddada</th><td>${escapeHtml(m.subject||t.subject||"—")}</td></tr>
-          <tr><th>Fasalka</th><td>${escapeHtml(m.class||"—")}</td><th>Taariikhda</th><td>${e.date}</td></tr>
-          <tr><th>Kormeeraha</th><td colspan="3">${escapeHtml(m.supervisorName||"—")}</td></tr>
-        </table>
-
-        <h3>Natiijada Guud: ${fmt1(score)}% — ${overallLevel(score)}</h3>
-
-        <table>
-          <thead><tr><th>#</th><th>Qodobka</th><th>Qiimeynta (1-5)</th><th>Faallo</th></tr></thead>
-          <tbody>
-            ${(e.items||[]).map((it,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(it.title.replace(/^\d+\.\s*/,''))}</td><td style="text-align:center;font-weight:700;">${it.rating}</td><td>${escapeHtml(it.comment||"—")}</td></tr>`).join("")}
-          </tbody>
-        </table>
-
-        ${(m.conclusion||m.strengths||m.improvements||m.recommendations) ? `
-        <h3>Gunaad</h3>
-        ${m.conclusion?`<p>${escapeHtml(m.conclusion)}</p>`:""}
-        ${m.strengths?`<p><b>Waxyaabaha wanaagsan:</b> ${escapeHtml(m.strengths)}</p>`:""}
-        ${m.improvements?`<p><b>U baahan horumarinta:</b> ${escapeHtml(m.improvements)}</p>`:""}
-        ${m.recommendations?`<p><b>Talooyinka Kormeeraha:</b> ${escapeHtml(m.recommendations)}</p>`:""}
-        ` : ""}
-
-        ${prevEval ? `
-        <h3>📊 Isbarbardhigga qodob-qodobka (vs ${prevEval.date})</h3>
-        ${comparisonHtmlPrint(prevEval, e)}
-        ` : `<div class="cmp-summary" style="margin-top:14px;">📌 Kani waa qiimeyntii koowaad ee macallinkan — weli lama isbarbardhigi karo qiimeymo hore.</div>`}
-      `;
-      printBtn.style.display = "inline-block";
-    }
-
-    function comparisonHtmlPrint(prevEval, currEval){
-      const cmp = compareItems(prevEval, currEval);
-      const s = comparisonSummary(cmp);
-      let summaryText;
-      if (s.up > s.down) summaryText = `Guud ahaan macallinku wuxuu sameeyay HORUMAR — ${s.up} qodob kor u kacay, ${s.down} hoos u dhacay, ${s.same} isku mid ahaaday.`;
-      else if (s.down > s.up) summaryText = `Guud ahaan macallinku wuxuu sameeyay HOOS U DHAC — ${s.down} qodob hoos u dhacay, ${s.up} kor u kacay, ${s.same} isku mid ahaaday.`;
-      else summaryText = `Isbeddel weyn lama arag — ${s.up} kor u kacay, ${s.down} hoos u dhacay, ${s.same} isku mid ahaaday.`;
-      const rows = cmp.map(c=>{
-        const note = c.status==="up" ? `Horumar (+${c.delta})` : c.status==="down" ? `Hoos u dhac (${c.delta})` : "Isku mid";
-        return `<tr><td>${escapeHtml(c.title.replace(/^\d+\.\s*/,''))}</td><td style="text-align:center;">${c.prev!==null?c.prev:"—"}</td><td style="text-align:center;">${c.curr!==null?c.curr:"—"}</td><td>${note}</td></tr>`;
-      }).join("");
-      return `<p><b>${summaryText}</b></p><table><thead><tr><th>Qodobka</th><th>Hore</th><th>Hadda</th><th>Isbeddelka</th></tr></thead><tbody>${rows}</tbody></table>`;
-    }
-  }
-
-  boot();
-})();
-</script>
-</body>
-</html>
+          <tr><th>Macallinka<

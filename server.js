@@ -530,6 +530,22 @@ app.put("/api/sow/topics/:id/toggle", requireAdmin, async (req, res) => {
   }
 });
 
+// Wipe the whole Scheme of Work for one subject+class (e.g. to fix a mistaken upload)
+app.delete("/api/sow/topics", requireAdmin, async (req, res) => {
+  try {
+    const { subjectKey, className } = req.body || {};
+    if (!subjectKey || !className) return res.status(400).json({ error: "subjectKey and className required" });
+    const { rowCount } = await pool.query(
+      "DELETE FROM sow_topics WHERE subject_key=$1 AND class_name=$2",
+      [subjectKey, className]
+    );
+    res.json({ ok: true, deleted: rowCount });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
 app.delete("/api/sow/topics/:id", requireAdmin, async (req, res) => {
   try {
     await pool.query("DELETE FROM sow_topics WHERE id=$1", [req.params.id]);

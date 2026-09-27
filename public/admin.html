@@ -209,8 +209,6 @@
 
   // ---------- Students tab state ----------
   let studentView = "assign"; // assign | report | manage
-  let assignClass = null;
-  let assignSection = null;
   let assignStudentId = null;
   let assignSelected = [];
   let reportClass = null;
@@ -697,15 +695,10 @@
   }
 
   function renderAssignSubjects(body){
-    const classes = studentClasses();
-    if (!classes.length){
+    if (!students.length){
       body.innerHTML = `<div class="card"><div class="empty">Wali arday lama gelin. Tag "➕ Ku Dar / Maarayn Ardayda" si aad ardayda ugu darto.</div></div>`;
       return;
     }
-    if (!assignClass || !classes.includes(assignClass)) assignClass = classes[0];
-    const sections = studentSections(assignClass);
-    if (assignSection===null || !sections.includes(assignSection)) assignSection = sections[0] || "";
-    const list = students.filter(s=>s.class_name===assignClass && (s.section||"")===(assignSection||""));
 
     body.innerHTML = `
       <div class="card">
@@ -713,31 +706,12 @@
         <input type="text" id="studentSearchInput" placeholder="Qor magaca ardayga ama nambarka diiwaanka..." value="${escapeHtml(studentSearchQuery)}">
         <div id="studentSearchResults"></div>
       </div>
-      <div class="card">
-        <h2>Dooro Fasalka iyo Qaybta</h2>
-        <label>Fasalka</label>
-        <select id="assignClassSel">${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===assignClass?"selected":""}>${escapeHtml(c)}</option>`).join("")}</select>
-        <label>Qaybta (Section)</label>
-        <select id="assignSectionSel">${sections.map(s=>`<option value="${escapeHtml(s)}" ${s===assignSection?"selected":""}>${escapeHtml(s)}</option>`).join("")}</select>
-      </div>
-      <div class="card">
-        <h2>Ardayda ${escapeHtml(assignClass)}${assignSection?` (${escapeHtml(assignSection)})`:""} — ${list.length}</h2>
-        ${list.length===0 ? `<div class="empty">Qaybtan arday kuma jiraan.</div>` :
-        list.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(s=>{
-          const held = (s.subjects||[]).length;
-          return `<div class="student-row" data-open="${s.id}">
-            <div><div class="name">${escapeHtml(s.name)}</div><div class="sub">${escapeHtml(s.adm_no||"")}</div></div>
-            <span class="badge ${held===12?'good':held===0?'bad':'warn'}">${held}/12 maado</span>
-          </div>`;
-        }).join("")}
-      </div>
       <div id="subjectPanel"></div>
     `;
-    document.getElementById("assignClassSel").addEventListener("change", (e)=>{ assignClass=e.target.value; assignSection=null; assignStudentId=null; render(); });
-    document.getElementById("assignSectionSel").addEventListener("change", (e)=>{ assignSection=e.target.value; assignStudentId=null; render(); });
 
     const searchInput = document.getElementById("studentSearchInput");
     const resultsBox = document.getElementById("studentSearchResults");
+
     function renderSearchResults(){
       const q = studentSearchQuery.trim().toLowerCase();
       if (!q){ resultsBox.innerHTML = ""; return; }
@@ -751,60 +725,61 @@
       }).join("") : `<div class="empty">Wax arday ah lama helin.</div>`;
       resultsBox.querySelectorAll("[data-search-open]").forEach(el=>{
         el.addEventListener("click", ()=>{
-          const st = students.find(x=>x.id===el.dataset.searchOpen);
-          if (!st) return;
-          assignClass = st.class_name;
-          assignSection = st.section || "";
-          assignStudentId = st.id;
-          assignSelected = (st.subjects||[]).slice();
+          assignStudentId = el.dataset.searchOpen;
+          assignSelected = [];
           studentSearchQuery = "";
-          render();
+          searchInput.value = "";
+          resultsBox.innerHTML = "";
+          renderSubjectPanel();
         });
       });
     }
     searchInput.addEventListener("input", (e)=>{ studentSearchQuery = e.target.value; renderSearchResults(); });
     renderSearchResults();
 
-    body.querySelectorAll("[data-open]").forEach(el=>{
-      el.addEventListener("click", ()=>{
-        assignStudentId = el.dataset.open;
-        const st = students.find(x=>x.id===assignStudentId);
-        assignSelected = st ? (st.subjects||[]).slice() : [];
-        renderSubjectPanel();
-      });
-    });
-    if (assignStudentId && list.some(s=>s.id===assignStudentId)) renderSubjectPanel();
+    if (assignStudentId && students.some(s=>s.id===assignStudentId)) renderSubjectPanel();
 
     function renderSubjectPanel(){
       const st = students.find(x=>x.id===assignStudentId);
       const panel = document.getElementById("subjectPanel");
       if (!st){ panel.innerHTML=""; return; }
+      const held = st.subjects||[];
+      const missing = STUDENT_SUBJECTS.filter(sub=>!held.includes(sub.key));
       panel.innerHTML = `
         <div class="card">
           <h2>Maadooyinka — ${escapeHtml(st.name)}</h2>
+          <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:10px;">${escapeHtml(st.adm_no||"")} · ${escapeHtml(st.class_name)}${st.section?` (${escapeHtml(st.section)})`:""} · Haysta ${held.length}/12 maado</div>
+          ${missing.length===0 ? `<div class="empty">✅ Ardaygan wuxuu haystaa dhammaan 12-da maado.</div>` : `
+          <label>Maadooyinka Kamaqan (tick kuwa uu hadda qaadanayo)</label>
           <div class="subj-grid">
-            ${STUDENT_SUBJECTS.map(sub=>`<button class="subj-chip ${assignSelected.includes(sub.key)?'sel':''}" data-subj="${sub.key}">${assignSelected.includes(sub.key)?'✓ ':''}${escapeHtml(sub.title)}</button>`).join("")}
+            ${missing.map(sub=>`<button class="subj-chip ${assignSelected.includes(sub.key)?'sel':''}" data-subj="${sub.key}">${assignSelected.includes(sub.key)?'✓ ':''}${escapeHtml(sub.title)}</button>`).join("")}
           </div>
           <button class="btn" id="btnSaveSubjects">💾 Kaydi Maadooyinka</button>
           <button class="btn secondary" id="btnAllSubjects">☑️ Dooro Dhammaan</button>
-          <button class="btn secondary" id="btnNoneSubjects">☐ Ka Saar Dhammaan</button>
+          `}
+          <button class="btn secondary" id="btnCloseStudent">✕ Xir</button>
         </div>
       `;
-      panel.querySelectorAll("[data-subj]").forEach(b=>{
-        b.addEventListener("click", ()=>{
-          const key = b.dataset.subj;
-          if (assignSelected.includes(key)) assignSelected = assignSelected.filter(k=>k!==key);
-          else assignSelected.push(key);
-          renderSubjectPanel();
+      if (missing.length){
+        panel.querySelectorAll("[data-subj]").forEach(b=>{
+          b.addEventListener("click", ()=>{
+            const key = b.dataset.subj;
+            if (assignSelected.includes(key)) assignSelected = assignSelected.filter(k=>k!==key);
+            else assignSelected.push(key);
+            renderSubjectPanel();
+          });
         });
-      });
-      document.getElementById("btnAllSubjects").addEventListener("click", ()=>{ assignSelected = STUDENT_SUBJECTS.map(s=>s.key); renderSubjectPanel(); });
-      document.getElementById("btnNoneSubjects").addEventListener("click", ()=>{ assignSelected = []; renderSubjectPanel(); });
-      document.getElementById("btnSaveSubjects").addEventListener("click", async ()=>{
-        const btn = document.getElementById("btnSaveSubjects"); btn.disabled=true; btn.textContent="Kaydinaya...";
-        try { await updateStudentSubjects(st.id, assignSelected); }
-        finally { btn.disabled=false; btn.textContent="💾 Kaydi Maadooyinka"; }
-      });
+        document.getElementById("btnAllSubjects").addEventListener("click", ()=>{ assignSelected = missing.map(s=>s.key); renderSubjectPanel(); });
+        document.getElementById("btnSaveSubjects").addEventListener("click", async ()=>{
+          const btn = document.getElementById("btnSaveSubjects"); btn.disabled=true; btn.textContent="Kaydinaya...";
+          try {
+            const merged = Array.from(new Set([...(st.subjects||[]), ...assignSelected]));
+            assignSelected = [];
+            await updateStudentSubjects(st.id, merged);
+          } finally { btn.disabled=false; btn.textContent="💾 Kaydi Maadooyinka"; }
+        });
+      }
+      document.getElementById("btnCloseStudent").addEventListener("click", ()=>{ assignStudentId=null; assignSelected=[]; render(); });
     }
   }
 

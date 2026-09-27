@@ -368,6 +368,7 @@
   async function addSowTopic(t){ await api("/api/sow/topics", { method:"POST", body: JSON.stringify(t) }); await loadAll(); }
   async function bulkSowTopics(payload){ const r = await api("/api/sow/topics/bulk", { method:"POST", body: JSON.stringify(payload) }); await loadAll(); return r; }
   async function deleteSowTopic(id){ await api("/api/sow/topics/"+id, { method:"DELETE" }); await loadAll(); }
+  async function clearSowScheme(subjectKey, className){ const r = await api("/api/sow/topics", { method:"DELETE", body: JSON.stringify({subjectKey, className}) }); await loadAll(); return r; }
   async function saveSowSettings(termStartDate){ await api("/api/sow/settings", { method:"PUT", body: JSON.stringify({termStartDate}) }); await loadAll(); }
 
   function sowTopicsFor(subjectKey, className){
@@ -1306,6 +1307,14 @@
           <button class="del-x" data-delsow2="${t.id}" title="Tirtir">✕</button>
         </div>`).join("")}
       </div>
+      ${existing.length ? `
+      <div class="card">
+        <h2>🗑️ Tirtir Dhammaan Scheme-ka</h2>
+        <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">
+          Haddii aad khalad ku samaysay soo gelinta, waxaad halkan ka tirtiri kartaa dhammaan ${existing.length}-da cashar ee "${escapeHtml((subjectCatalog.find(s=>s.key===sowSubject)||{}).title||"")}" — ${escapeHtml(sowClass)}, kadibna mid cusub soo geli.
+        </div>
+        <button class="btn secondary" id="btnClearSow" style="color:var(--bad);border-color:var(--bad);">🗑️ Tirtir Dhammaan Scheme-ka Maadadan</button>
+      </div>` : ""}
     `;
     document.getElementById("sowSubjectSel2").addEventListener("change",(e)=>{ sowSubject=e.target.value; render(); });
     document.getElementById("sowClassSel2").addEventListener("change",(e)=>{ sowClass=e.target.value; render(); });
@@ -1349,6 +1358,16 @@
         if (confirm("Ma hubtaa inaad tirtirto casharkan?")) await deleteSowTopic(el.dataset.delsow2);
       });
     });
+    const clearBtn = document.getElementById("btnClearSow");
+    if (clearBtn){
+      clearBtn.addEventListener("click", async ()=>{
+        const subjTitle = (subjectCatalog.find(s=>s.key===sowSubject)||{}).title||"";
+        if (confirm(`Ma hubtaa inaad tirtirto dhammaan ${existing.length}-da cashar ee "${subjTitle}" — ${sowClass}? Tallaabadan lama soo celin karo.`)){
+          clearBtn.disabled = true; clearBtn.textContent = "Tirtirayaa...";
+          try { await clearSowScheme(sowSubject, sowClass); } finally { clearBtn.disabled = false; clearBtn.textContent = "🗑️ Tirtir Dhammaan Scheme-ka Maadadan"; }
+        }
+      });
+    }
   }
 
   function renderSowSettings(body){

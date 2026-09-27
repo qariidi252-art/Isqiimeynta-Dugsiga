@@ -6,22 +6,22 @@ import { fileURLToPath } from "url";
 
 const { Pool } = pkg;
 
-// ---------- Form 4 subjects (fixed list) ----------
-const SUBJECTS = [
-  { key: "mathematics", title: "Mathematics" },
-  { key: "physics", title: "Physics" },
-  { key: "chemistry", title: "Chemistry" },
-  { key: "biology", title: "Biology" },
-  { key: "english", title: "English" },
-  { key: "af_soomaali", title: "Af-Soomaali" },
-  { key: "arabic", title: "Arabic" },
-  { key: "history", title: "History" },
-  { key: "geography", title: "Geography" },
-  { key: "business_studies", title: "Business Studies" },
-  { key: "tarbiyo", title: "Tarbiyo" },
-  { key: "ict", title: "ICT" },
+// Form 4 subjects now live in the `subjects` table (admin can add/remove them);
+// this is only the one-time seed used the first time the table is empty.
+const DEFAULT_SUBJECTS = [
+  ["mathematics", "Mathematics"],
+  ["physics", "Physics"],
+  ["chemistry", "Chemistry"],
+  ["biology", "Biology"],
+  ["english", "English"],
+  ["af_soomaali", "Af-Soomaali"],
+  ["arabic", "Arabic"],
+  ["history", "History"],
+  ["geography", "Geography"],
+  ["business_studies", "Business Studies"],
+  ["tarbiyo", "Tarbiyo"],
+  ["ict", "ICT"],
 ];
-const SUBJECT_KEYS = SUBJECTS.map((s) => s.key);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json());
@@ -80,6 +80,21 @@ async function initDb() {
     subjects JSONB NOT NULL DEFAULT '[]',
     created_at TIMESTAMPTZ DEFAULT now()
   )`);
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS subjects (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    sort_order INT NOT NULL DEFAULT 0
+  )`);
+  const { rows: subjCount } = await pool.query("SELECT COUNT(*)::int AS c FROM subjects");
+  if (subjCount[0].c === 0) {
+    for (let i = 0; i < DEFAULT_SUBJECTS.length; i++) {
+      await pool.query(
+        "INSERT INTO subjects (id, title, sort_order) VALUES ($1,$2,$3) ON CONFLICT (id) DO NOTHING",
+        [DEFAULT_SUBJECTS[i][0], DEFAULT_SUBJECTS[i][1], i]
+      );
+    }
+  }
 
   console.log("✅ Database ready");
 }
@@ -236,8 +251,51 @@ app.delete("/api/evaluations/:id", requireAdmin, async (req, res) => {
 });
 
 // ---------- Students & subjects (admin) ----------
-app.get("/api/subjects", requireAdmin, (req, res) => {
-  res.json(SUBJECTS);
+app.get("/api/subjects", requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT id, title FROM subjects ORDER BY sort_order ASC, title ASC");
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+app.post("/api/subjects", requireAdmin, async (req, res) => {
+  try {
+    const { title } = req.body || {};
+    if (!title || !title.trim()) return res.status(400).json({ error: "title required" });
+    const { rows: maxRow } = await pool.query("SELECT COALESCE(MAX(sort_order),-1) AS m FROM subjects");
+    const nextOrder = maxRow[0].m + 1;
+    let base = title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    if (!base) base = "subject";
+    let id = base;
+    let n = 1;
+    while (true) {
+      const { rows } = await pool.query("SELECT 1 FROM subjects WHERE id=$1", [id]);
+      if (!rows.length) break;
+      n++;
+      id = base + "_" + n;
+    }
+    await pool.query("INSERT INTO subjects (id, title, sort_order) VALUES ($1,$2,$3)", [id, title.trim(), nextOrder]);
+    res.json({ ok: true, id });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+app.delete("/api/subjects/:id", requireAdmin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    await pool.query("DELETE FROM subjects WHERE id=$1", [id]);
+    // also drop this subject from every student who had it
+    await pool.query("UPDATE students SET subjects = subjects - $1 WHERE subjects ? $1", [id]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
 });
 
 app.get("/api/students", requireAdmin, async (req, res) => {
@@ -314,7 +372,9 @@ app.put("/api/students/:id/subjects", requireAdmin, async (req, res) => {
   try {
     const { subjects } = req.body || {};
     if (!Array.isArray(subjects)) return res.status(400).json({ error: "subjects must be an array" });
-    const clean = subjects.filter((s) => SUBJECT_KEYS.includes(s));
+    const { rows: subRows } = await pool.query("SELECT id FROM subjects");
+    const validKeys = subRows.map((r) => r.id);
+    const clean = subjects.filter((s) => validKeys.includes(s));
     const { rowCount } = await pool.query(
       "UPDATE students SET subjects=$1 WHERE id=$2",
       [JSON.stringify(clean), req.params.id]

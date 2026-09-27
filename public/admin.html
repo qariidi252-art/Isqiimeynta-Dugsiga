@@ -1179,6 +1179,7 @@
         <button data-sowv="progress" class="${sowView==="progress"?"active":""}">📊 Xaaladda Casharada</button>
         <button data-sowv="upload" class="${sowView==="upload"?"active":""}">📤 Soo Deji Scheme</button>
         <button data-sowv="settings" class="${sowView==="settings"?"active":""}">⚙️ Dejinta Semester-ka</button>
+        <button data-sowv="lookup" class="${sowView==="lookup"?"active":""}">🔍 Warbixin Cashar</button>
       </div>
       <div id="sowBody"></div>
     `;
@@ -1188,6 +1189,7 @@
     const body = document.getElementById("sowBody");
     if (sowView==="upload") renderSowUpload(body);
     else if (sowView==="settings") renderSowSettings(body);
+    else if (sowView==="lookup") renderSowLookup(body);
     else renderSowProgress(body);
   }
 
@@ -1389,6 +1391,128 @@
       const btn = document.getElementById("btnSaveSowSettings"); btn.disabled=true;
       try { await saveSowSettings(val); } finally { btn.disabled=false; }
     });
+  }
+
+  // ---------- Scheme of Work: report by subject + lesson title ----------
+  function normalizeTopicText(s){
+    return String(s||"")
+      .toLowerCase()
+      .normalize("NFKD").replace(/[\u0300-\u036f]/g,"")
+      .replace(/[^a-z0-9\s]/g," ")
+      .replace(/\s+/g," ")
+      .trim();
+  }
+  function findSowTopicMatches(subjectKey, query){
+    const q = normalizeTopicText(query);
+    if (!q) return [];
+    const qWords = new Set(q.split(" ").filter(Boolean));
+    const candidates = sowTopics.filter(t=>t.subject_key===subjectKey);
+    const scored = candidates.map(t=>{
+      const norm = normalizeTopicText(t.topic);
+      let score = 0;
+      if (norm === q) score = 100;
+      else if (norm.includes(q) || q.includes(norm)) score = 80;
+      else {
+        const words = new Set(norm.split(" ").filter(Boolean));
+        let common = 0;
+        qWords.forEach(w=>{ if (words.has(w)) common++; });
+        score = qWords.size ? Math.round((common/qWords.size)*60) : 0;
+      }
+      return { t, score };
+    }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score);
+    return scored;
+  }
+
+  function renderSowLookup(body){
+    if (!subjectCatalog.length){
+      body.innerHTML = `<div class="card"><div class="empty">Wali maadooyin lama gelin. Tag tab-ka "Ardayda / Maadooyinka" si aad u darto.</div></div>`;
+      return;
+    }
+    if (!sowSubject || !subjectCatalog.some(s=>s.key===sowSubject)) sowSubject = subjectCatalog[0].key;
+    const week = currentWeekNo();
+    body.innerHTML = `
+      <div class="card">
+        <h2>🔍 Warbixinta Cinwaanka Casharka</h2>
+        <div style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">
+          Dooro maadada, kadibna qor cinwaanka casharka (tusaale: "Simple harmonic motion; period in SHM"). Nidaamku wuxuu ka eegayaa Scheme of Work-ka maadadan ee kujira systemka, oo kuu sheegaya toddobaadka loo qorsheeyay iyo in aad la socoto ama aad ka dib dhacsan tahay marka loo eego toddobaadka hadda socda.
+        </div>
+        <label>Maadada</label>
+        <select id="sowLookupSubject">${subjectCatalog.map(s=>`<option value="${escapeHtml(s.key)}" ${s.key===sowSubject?"selected":""}>${escapeHtml(s.title)}</option>`).join("")}</select>
+        <label>Cinwaanka Casharka</label>
+        <input type="text" id="sowLookupTitle" placeholder="tusaale: Simple harmonic motion; period in SHM">
+        <button class="btn" id="btnSowLookup">📄 Soo Saar Warbixinta</button>
+        ${week==null ? `<div class="compare-note pending" style="margin-top:14px;">⏳ Wali lama dejin taariikhda bilowga semester-ka — tag "⚙️ Dejinta Semester-ka" si loo xisaabiyo toddobaadka hadda socda.</div>` : ""}
+      </div>
+      <div id="sowLookupResult"></div>
+    `;
+    document.getElementById("sowLookupSubject").addEventListener("change",(e)=>{ sowSubject = e.target.value; });
+    const titleInput = document.getElementById("sowLookupTitle");
+    const runLookup = ()=>{
+      const subjectKey = document.getElementById("sowLookupSubject").value;
+      renderSowLookupReport(subjectKey, titleInput.value);
+    };
+    document.getElementById("btnSowLookup").addEventListener("click", runLookup);
+    titleInput.addEventListener("keydown", (e)=>{ if (e.key==="Enter") runLookup(); });
+  }
+
+  function renderSowLookupReport(subjectKey, title){
+    const out = document.getElementById("sowLookupResult");
+    const subjTitle = (subjectCatalog.find(s=>s.key===subjectKey)||{}).title || "";
+    if (!title || !title.trim()){
+      out.innerHTML = `<div class="card"><div class="empty">Fadlan qor cinwaanka casharka.</div></div>`;
+      return;
+    }
+    const matches = findSowTopicMatches(subjectKey, title);
+    if (!matches.length){
+      const allTopics = sowTopics.filter(t=>t.subject_key===subjectKey);
+      out.innerHTML = `
+        <div class="card">
+          <div class="compare-note pending">⚠️ Cinwaanka "<b>${escapeHtml(title.trim())}</b>" lagama helin Scheme of Work-ka maadada <b>${escapeHtml(subjTitle)}</b>.</div>
+          <p style="font-size:.8rem;color:var(--text-dim);margin-top:10px;">
+            ${allTopics.length
+              ? `Hubi in qoraalku la mid yahay ama u dhow yahay sida Scheme of Work-ka loogu qoray, ama tag "📤 Soo Deji Scheme" si aad u eegto liiska casharada maadadan.`
+              : `Wali Scheme of Work looma gelin maadada "${escapeHtml(subjTitle)}". Tag "📤 Soo Deji Scheme" si aad u geliso.`}
+          </p>
+        </div>`;
+      return;
+    }
+    const week = currentWeekNo();
+    // Keep only the best-scoring match per class (a subject can have more than one class).
+    const byClass = {};
+    matches.forEach(({t,score})=>{
+      const key = t.class_name;
+      if (!byClass[key] || byClass[key].score < score) byClass[key] = { t, score };
+    });
+    const rows = Object.values(byClass).sort((a,b)=>a.t.class_name.localeCompare(b.t.class_name));
+    out.innerHTML = rows.map(({t,score})=>{
+      let statusHtml;
+      if (t.done){
+        statusHtml = `<div class="compare-note ok">✅ Casharkan horeyba waa la dhammeeyay${t.week_no!=null?` (loo qorsheeyay Toddobaad ${t.week_no})`:""}.</div>`;
+      } else if (week==null){
+        statusHtml = `<div class="compare-note pending">⏳ Lama xisaabin karo xaaladda — wali lama dejin taariikhda bilowga semester-ka.</div>`;
+      } else if (t.week_no==null){
+        statusHtml = `<div class="compare-note pending">ℹ️ Casharkan toddobaad looma qorin Scheme of Work-ka, sidaa darteed lagama xisaabin karo in la dib dhacay iyo in kale.</div>`;
+      } else if (t.week_no < week){
+        const diff = week - t.week_no;
+        statusHtml = `<div class="compare-note pending">⚠️ Waad ka dib dhacsan tahay — casharkan waxaa loo qorsheeyay Toddobaad <b>${t.week_no}</b>, waxaadna haatan joogtaa Toddobaadka <b>${week}</b> (${diff} toddobaad oo dib dhac ah).</div>`;
+      } else if (t.week_no === week){
+        statusHtml = `<div class="compare-note ok">✅ Waad la socotaa jadwalka — casharkan waxaa loo qorsheeyay toddobaadkan (Toddobaad ${week}).</div>`;
+      } else {
+        const diff = t.week_no - week;
+        statusHtml = `<div class="compare-note ok">🟢 Waad ka hor martay jadwalka — casharkan waxaa loo qorsheeyay Toddobaad <b>${t.week_no}</b> (${diff} toddobaad oo mustaqbal ah), waxaadna haatan joogtaa Toddobaadka <b>${week}</b>.</div>`;
+      }
+      return `
+        <div class="card">
+          <h2>${escapeHtml(subjTitle)} — ${escapeHtml(t.class_name)}</h2>
+          <p style="font-size:.85rem;margin:0 0 6px;">
+            Cinwaanka la helay: <b>${escapeHtml(t.topic)}</b>
+            ${t.week_no!=null?` &nbsp;·&nbsp; Toddobaadka Qorshaysan: <b>${t.week_no}</b>`:""}
+            ${week!=null?` &nbsp;·&nbsp; Toddobaadka Hadda: <b>${week}</b>`:""}
+          </p>
+          ${score<80 ? `<p style="font-size:.75rem;color:var(--text-dim);">(Isku ekaanshaha qoraalka ma aha 100% — hubi in ay tahay casharka saxda ah.)</p>` : ""}
+          ${statusHtml}
+        </div>`;
+    }).join("");
   }
 
   function renderNewEval(){

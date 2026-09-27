@@ -215,6 +215,7 @@
   let assignSelected = [];
   let reportClass = null;
   let reportSection = "__ALL__";
+  let studentSearchQuery = "";
 
   const app = document.getElementById("app");
   const PW_KEY = "qm_admin_pw";
@@ -708,6 +709,11 @@
 
     body.innerHTML = `
       <div class="card">
+        <h2>🔎 Raadi Arday (magaca ama Adm No)</h2>
+        <input type="text" id="studentSearchInput" placeholder="Qor magaca ardayga ama nambarka diiwaanka..." value="${escapeHtml(studentSearchQuery)}">
+        <div id="studentSearchResults"></div>
+      </div>
+      <div class="card">
         <h2>Dooro Fasalka iyo Qaybta</h2>
         <label>Fasalka</label>
         <select id="assignClassSel">${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===assignClass?"selected":""}>${escapeHtml(c)}</option>`).join("")}</select>
@@ -729,6 +735,36 @@
     `;
     document.getElementById("assignClassSel").addEventListener("change", (e)=>{ assignClass=e.target.value; assignSection=null; assignStudentId=null; render(); });
     document.getElementById("assignSectionSel").addEventListener("change", (e)=>{ assignSection=e.target.value; assignStudentId=null; render(); });
+
+    const searchInput = document.getElementById("studentSearchInput");
+    const resultsBox = document.getElementById("studentSearchResults");
+    function renderSearchResults(){
+      const q = studentSearchQuery.trim().toLowerCase();
+      if (!q){ resultsBox.innerHTML = ""; return; }
+      const matches = students.filter(s=>s.name.toLowerCase().includes(q) || (s.adm_no||"").toLowerCase().includes(q)).slice(0,20);
+      resultsBox.innerHTML = matches.length ? matches.map(s=>{
+        const held = (s.subjects||[]).length;
+        return `<div class="student-row" data-search-open="${s.id}">
+          <div><div class="name">${escapeHtml(s.name)}</div><div class="sub">${escapeHtml(s.adm_no||"")} · ${escapeHtml(s.class_name)}${s.section?` (${escapeHtml(s.section)})`:""}</div></div>
+          <span class="badge ${held===12?'good':held===0?'bad':'warn'}">${held}/12 maado</span>
+        </div>`;
+      }).join("") : `<div class="empty">Wax arday ah lama helin.</div>`;
+      resultsBox.querySelectorAll("[data-search-open]").forEach(el=>{
+        el.addEventListener("click", ()=>{
+          const st = students.find(x=>x.id===el.dataset.searchOpen);
+          if (!st) return;
+          assignClass = st.class_name;
+          assignSection = st.section || "";
+          assignStudentId = st.id;
+          assignSelected = (st.subjects||[]).slice();
+          studentSearchQuery = "";
+          render();
+        });
+      });
+    }
+    searchInput.addEventListener("input", (e)=>{ studentSearchQuery = e.target.value; renderSearchResults(); });
+    renderSearchResults();
+
     body.querySelectorAll("[data-open]").forEach(el=>{
       el.addEventListener("click", ()=>{
         assignStudentId = el.dataset.open;

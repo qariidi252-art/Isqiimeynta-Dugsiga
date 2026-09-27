@@ -59,6 +59,12 @@
   .compare-note { font-size:.8rem; padding:10px 12px; border-radius:10px; margin-top:10px; }
   .compare-note.ok { background:rgba(30,142,90,.12); color:var(--good); }
   .compare-note.pending { background:rgba(201,138,19,.12); color:var(--warn); }
+  .sow-hint { font-size:.82rem; padding:12px 14px; border-radius:10px; margin-top:12px; border:1px solid var(--border); }
+  .sow-hint.muted { background:var(--surface-2); color:var(--text-dim); }
+  .sow-hint.warn { background:rgba(201,138,19,.12); color:var(--warn); border-color:transparent; }
+  .sow-hint.due { background:rgba(192,57,43,.10); color:var(--text); border-color:transparent; }
+  .sow-hint.ok { background:rgba(30,142,90,.12); color:var(--text); border-color:transparent; }
+  .sow-hint select { margin-top:4px; }
   .del-x { background:none; border:none; color:var(--bad); font-size:1.1rem; cursor:pointer; padding:2px 6px; }
   .loading { text-align:center; padding:40px; color:var(--text-dim); }
   .link-box { display:flex; gap:6px; align-items:center; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:8px 10px; margin-top:8px; font-size:.78rem; word-break:break-all; }
@@ -300,6 +306,13 @@
     return "U Baahan Taageero Degdeg ah";
   }
   function scoreBadgeClass(pct){ if (pct>=70) return "good"; if (pct>=50) return "warn"; return "bad"; }
+  function sowStatusLabel(status){
+    if (status==="on_track") return "✅ SOW:";
+    if (status==="behind") return "⚠️ SOW (ka danbeeyay):";
+    if (status==="ahead") return "➡️ SOW (ka hormaray):";
+    if (status==="unrecognized") return "❓ SOW:";
+    return "📘 SOW:";
+  }
   function teacherEvals(id){ return evaluations.filter(e=>e.teacher_id===id).sort((a,b)=>new Date(a.date)-new Date(b.date)); }
   function teacherLatestScore(id){ const e=teacherEvals(id); return e.length? Number(e[e.length-1].score) : null; }
   function teacherOverallScore(id){ const e=teacherEvals(id); if(!e.length) return null; return e.reduce((a,x)=>a+Number(x.score),0)/e.length; }
@@ -384,6 +397,99 @@
     const diffDays = Math.floor((new Date() - start)/86400000);
     if (diffDays < 0) return 0;
     return Math.floor(diffDays/7)+1;
+  }
+  // Same as currentWeekNo() but for an arbitrary date (e.g. the evaluation's visit date,
+  // which may not be "today" if the supervisor is logging a past classroom visit).
+  function weekNoForDate(dateStr){
+    const startRaw = sowSettings.term_start_date;
+    if (!startRaw || !dateStr) return null;
+    const start = new Date(startRaw+"T00:00:00");
+    const d = new Date(dateStr+"T00:00:00");
+    if (isNaN(start.getTime()) || isNaN(d.getTime())) return null;
+    const diffDays = Math.floor((d - start)/86400000);
+    if (diffDays < 0) return 0;
+    return Math.floor(diffDays/7)+1;
+  }
+  // Given the topics of one subject+class, work out which topic the Scheme of Work
+  // says should have been reached by a given week (the last topic whose week number
+  // is <= that week). This is the "casharka la sugayo" a supervisor compares against
+  // what's written on the board.
+  function sowExpectedTopic(topics, weekNo){
+    if (!topics.length || weekNo == null) return null;
+    const due = topics.filter(t=>t.week_no!=null && t.week_no<=weekNo);
+    if (due.length) return due[due.length-1];
+    // No week numbers set on any topic: fall back to the first not-yet-done topic.
+    if (topics.every(t=>t.week_no==null)) return topics.find(t=>!t.done) || topics[0];
+    return null;
+  }
+
+  // ---- Automatic matching: the supervisor types the topic they see written on the
+  // board, and this finds which SOW entry (if any) it corresponds to, so the system
+  // can work out on its own whether the class is on schedule, behind, or ahead.
+  function normalizeSowText(s){
+    return String(s||"")
+      .toLowerCase()
+      .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  function sowTextSimilarity(a, b){
+    const na = normalizeSowText(a), nb = normalizeSowText(b);
+    if (!na || !nb) return 0;
+    if (na === nb) return 1;
+    if (na.includes(nb) || nb.includes(na)) return 0.85;
+    const wa = new Set(na.split(" ").filter(w=>w.length>2));
+    const wb = new Set(nb.split(" ").filter(w=>w.length>2));
+    if (!wa.size || !wb.size) return 0;
+    let inter = 0;
+    wa.forEach(w=>{ if (wb.has(w)) inter++; });
+    const union = new Set([...wa, ...wb]).size;
+    return union ? inter/union : 0;
+  }
+  // Returns the SOW topic that best matches free-typed board text, or null if nothing
+  // is confident enough to call a match (below ~1/3 word overlap).
+  function bestSowMatch(topics, boardText){
+    if (!boardText || !boardText.trim() || !topics.length) return null;
+    let best = null, bestScore = 0;
+    topics.forEach(t=>{
+      const score = sowTextSimilarity(t.topic, boardText);
+      if (score > bestScore){ bestScore = score; best = t; }
+    });
+    if (!best || bestScore < 0.34) return null;
+    return best;
+  }
+  // Compares the matched board topic against the topic due this week and classifies
+  // the class as on_track / behind / ahead, with how many weeks/topics off it is.
+  function sowStatusFor(topics, matched, expected, weekNo){
+    if (!matched) return { status: "unrecognized", diff: 0 };
+    if (matched.week_no != null && expected && expected.week_no != null){
+      const diff = expected.week_no - matched.week_no;
+      if (diff === 0) return { status: "on_track", diff: 0 };
+      if (diff > 0) return { status: "behind", diff };
+      return { status: "ahead", diff: Math.abs(weekNo != null ? Math.min(-diff, matched.week_no - weekNo) : -diff) };
+    }
+    // No week numbers to compare — fall back to position in the ordered topic list.
+    const idxMatched = topics.findIndex(t=>t.id===matched.id);
+    const idxExpected = expected ? topics.findIndex(t=>t.id===expected.id) : -1;
+    if (idxExpected === -1 || idxMatched === idxExpected) return { status: "on_track", diff: 0 };
+    return { status: idxMatched < idxExpected ? "behind" : "ahead", diff: Math.abs(idxExpected - idxMatched) };
+  }
+  // Turns the status into plain-language guidance for the teacher/report — this is
+  // frozen into the saved evaluation so the advice reads correctly even if the SOW
+  // changes later.
+  function sowAdviceText(status, diff, subjectTitle, matchedTopic, expectedTopic){
+    const wk = diff===1 ? "1 toddobaad" : `${diff} toddobaad`;
+    if (status === "on_track"){
+      return `✅ Macallinku wuxuu si sax ah ula socdaa Scheme of Work-ka ${subjectTitle?`ee ${subjectTitle}`:""} — casharka sabuuradda ku qoran (“${matchedTopic}”) waa kii toddobaadkan la sugayay. Talo: sii wad qorshaha sida uu yahay, oo hubi in ardaydu si buuxda u fahmaan casharka ka hor inta aan lagu sii gudbin mid cusub.`;
+    }
+    if (status === "behind"){
+      return `⚠️ Macallinku wuxuu ka danbeeyaa jadwalka SOW-ga ${wk} — sabuuradda waxaa ku qoran “${matchedTopic}”, halka casharka la sugayay uu yahay “${expectedTopic||"—"}”. Talooyin: (1) samee qorshe degdeg ah oo lagu soo celiyo waqtiga la waayey, sida fasallo dheeraad ah ama xawaare kordhinta casharrada soo socda; (2) baar sababta hadhaaga — fahan darro ardayd mise waqti la'aan; (3) la hadal madaxa qeybta si loo taageero oo loo dejiyo taariikh cusub oo la gaadhi karo.`;
+    }
+    if (status === "ahead"){
+      return `➡️ Macallinku wuxuu ka sii horreeyaa jadwalka SOW-ga ${wk} — sabuuradda waxaa ku qoran “${matchedTopic}”, halka casharka la sugayay uu yahay “${expectedTopic||"—"}”. Talooyin: (1) hubi in ardaydu si buuxda u fahmeen casharrada la dhaafay ka hor inta aan sii socon; (2) hubi in xawaaraha uusan u dhicin faahfaahin muhiim ah; (3) haddii tani tahay qorshe ula kac ah, waa fiican tahay — u isticmaal waqtiga dheeraadka ah dib u eegis iyo xoojin.`;
+    }
+    return `❓ Cinwaanka sabuuradda ku qoran lama garan karin inuu ka mid yahay Scheme of Work-ka ${subjectTitle?`ee ${subjectTitle}`:""} ee fasalkan. Talo: hubi in cinwaanka si sax ah loo qoray, ama in Scheme of Work-ka maadadan/fasalkan si buuxda loo geliyay (tab-ka 📘 Scheme of Work).`;
   }
   function parseSowRows(raw){
     const lines = raw.split("\n").map(l=>l.replace(/\r$/,"")).filter(l=>l.trim());
@@ -717,6 +823,7 @@
               <span style="display:flex;align-items:center;gap:6px;"><span class="badge ${scoreBadgeClass(Number(e.score))}">${fmt1(Number(e.score))}%</span><button class="del-x" data-delev="${e.id}">✕</button></span>
             </div>
             <div class="notes-txt">${overallLevel(Number(e.score))}${meta.supervisorName?` · Kormeere: ${escapeHtml(meta.supervisorName)}`:""}</div>
+            ${meta.sowAdvice ? `<div class="notes-txt">${sowStatusLabel(meta.sowStatus)} ${escapeHtml(meta.sowAdvice)}</div>` : (meta.sowTopic ? `<div class="notes-txt">📘 SOW ee la sugayay: ${escapeHtml(meta.sowTopic)}${meta.sowWeek?` (W${escapeHtml(String(meta.sowWeek))})`:""}</div>` : "")}
             ${meta.conclusion || meta.strengths || meta.improvements || meta.recommendations ? `<div class="notes-txt">📝 <a href="#" data-viewdetail="${e.id}" style="color:var(--accent);">Arag Gunaadka</a></div>` : ""}
             ${prevEval ? `<details><summary>📊 Isbarbardhigga qodob-qodobka (vs ${prevEval.date})</summary>${comparisonHtml(prevEval, e)}</details>` : ""}
           </div>`;
@@ -1522,8 +1629,6 @@
     evalState = {};
     CRITERIA.forEach(c=>{ evalState[c.key] = { rating:null, comment:"" }; });
 
-    const uniqueSubjects = Array.from(new Set(teachers.map(t=>t.subject).filter(Boolean))).sort();
-
     app.innerHTML = `
       <div class="card">
         <h2>Foomka Kormeerka iyo Qiimeynta Macallinka</h2>
@@ -1537,14 +1642,16 @@
         <label>Maadada</label>
         <select id="evalSubjectSel">
           <option value="">— Dooro Maadada —</option>
-          ${uniqueSubjects.map(s=>`<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("")}
+          ${subjectCatalog.map(s=>`<option value="${escapeHtml(s.key)}">${escapeHtml(s.title)}</option>`).join("")}
           <option value="__other__">Kale (qor gacanta)</option>
         </select>
         <input type="text" id="evalSubjectOther" placeholder="Qor maadada" style="display:none;margin-top:6px;">
         <label>Fasalka</label>
-        <input type="text" id="evalClass" placeholder="tusaale: Fasalka 5">
+        <input type="text" id="evalClass" placeholder="tusaale: Fasalka 5" list="evalClassList">
+        <datalist id="evalClassList">${studentClasses().map(c=>`<option value="${escapeHtml(c)}">`).join("")}</datalist>
         <label>Taariikhda Kormeerka</label>
         <input type="date" id="evalDate" value="${today}">
+        <div id="sowHintBox"></div>
         <label>Magaca Kormeeraha</label>
         <input type="text" id="evalSupervisor" placeholder="Magacaaga">
         <div class="scale-legend">
@@ -1568,210 +1675,65 @@
     const teacherSel = document.getElementById("evalTeacherSel");
     const subjectSel = document.getElementById("evalSubjectSel");
     const subjectOther = document.getElementById("evalSubjectOther");
+    const classInput = document.getElementById("evalClass");
+    const dateInput = document.getElementById("evalDate");
+
+    // Match a teacher's free-text subject (typed when the teacher was added) to the
+    // official subject catalog used by the Scheme of Work, so the SOW hint can find it.
+    function applySubjectFromTeacher(subjText){
+      if (!subjText) return;
+      const cat = subjectCatalog.find(s=>s.title.toLowerCase()===subjText.toLowerCase() || s.key===subjText.toLowerCase());
+      if (cat){ subjectSel.value = cat.key; subjectOther.style.display = "none"; }
+      else { subjectSel.value = "__other__"; subjectOther.style.display = "block"; subjectOther.value = subjText; }
+    }
     teacherSel.addEventListener("change", ()=>{
       const opt = teacherSel.options[teacherSel.selectedIndex];
-      const subj = opt ? opt.dataset.subject : "";
-      if (subj && Array.from(subjectSel.options).some(o=>o.value===subj)){
-        subjectSel.value = subj; subjectOther.style.display = "none";
-      }
+      applySubjectFromTeacher(opt ? opt.dataset.subject : "");
+      renderSowHint();
     });
     subjectSel.addEventListener("change", ()=>{
       subjectOther.style.display = subjectSel.value === "__other__" ? "block" : "none";
+      renderSowHint();
     });
+    subjectOther.addEventListener("input", renderSowHint);
+    classInput.addEventListener("input", renderSowHint);
+    dateInput.addEventListener("change", renderSowHint);
     if (preselectTeacher){
       const opt = Array.from(teacherSel.options).find(o=>o.value===preselectTeacher);
-      const subj = opt ? opt.dataset.subject : "";
-      if (subj && Array.from(subjectSel.options).some(o=>o.value===subj)) subjectSel.value = subj;
+      applySubjectFromTeacher(opt ? opt.dataset.subject : "");
     }
 
-    const wrap = document.getElementById("itemsWrap");
-    CRITERIA.forEach(c=>{
-      const div = document.createElement("div");
-      div.className = "qitem";
-      div.innerHTML = `
-        <div class="qitem-title">${c.title}</div>
-        <div class="qitem-text">${escapeHtml(c.text)}</div>
-        <div class="rate-row">
-          <button class="rate-btn" data-r="5" data-item="${c.key}">5</button>
-          <button class="rate-btn" data-r="4" data-item="${c.key}">4</button>
-          <button class="rate-btn" data-r="3" data-item="${c.key}">3</button>
-          <button class="rate-btn" data-r="2" data-item="${c.key}">2</button>
-          <button class="rate-btn" data-r="1" data-item="${c.key}">1</button>
-        </div>
-        <input type="text" class="qitem-comment" data-comment="${c.key}" placeholder="Comment/Faallo (ikhtiyaari)">
-      `;
-      wrap.appendChild(div);
-    });
-
-    function updateProgress(){
-      let done = 0;
-      Object.values(evalState).forEach(v=>{ if (v.rating!==null) done++; });
-      document.getElementById("progressCount").textContent = done;
-      document.getElementById("progressBar").style.width = Math.round((done/TOTAL_ITEMS)*100)+"%";
-      const saveBtn = document.getElementById("saveEvalBtn");
-      if (done === TOTAL_ITEMS){
-        saveBtn.disabled = false;
-        saveBtn.textContent = "💾 Kaydi Qiimeynta";
-      } else {
-        saveBtn.disabled = true;
-        saveBtn.textContent = `💾 Kaydi Qiimeynta (${TOTAL_ITEMS-done} baaqi)`;
+    // ---- Scheme of Work hint: the supervisor types the topic seen written on the
+    // board, and the system automatically works out whether it matches what the
+    // Scheme of Work says should be taught this week — on track, behind, or ahead —
+    // with guidance for the teacher, no manual yes/no judgement needed.
+    function renderSowHint(){
+      const box = document.getElementById("sowHintBox");
+      if (!box) return;
+      const prevBoardText = box.dataset.boardTopic || "";
+      box.dataset.expectedTopic = ""; box.dataset.expectedWeek = ""; box.dataset.boardTopic = "";
+      box.dataset.matchedTopic = ""; box.dataset.matchedWeek = ""; box.dataset.sowStatus = ""; box.dataset.sowDiff = ""; box.dataset.sowAdvice = "";
+      const key = subjectSel.value;
+      const className = classInput.value.trim();
+      if (!key || key === "__other__" || !className){
+        box.innerHTML = `<div class="sow-hint muted">📘 Dooro maadada (liiska rasmiga ah) iyo geli fasalka si aad u geliso cinwaanka sabuuradda oo nidaamku si otomaatig ah u eego xagta uu ka joogo Scheme of Work-ka.</div>`;
+        return;
       }
-    }
-
-    wrap.querySelectorAll(".rate-btn").forEach(btn=>{
-      btn.addEventListener("click", ()=>{
-        const key = btn.dataset.item;
-        const r = Number(btn.dataset.r);
-        evalState[key].rating = r;
-        wrap.querySelectorAll(`.rate-btn[data-item="${key}"]`).forEach(b=>b.classList.remove("sel"));
-        btn.classList.add("sel");
-        updateProgress();
-      });
-    });
-    wrap.querySelectorAll(".qitem-comment").forEach(inp=>{
-      inp.addEventListener("input", ()=>{
-        const key = inp.dataset.comment;
-        evalState[key].comment = inp.value;
-      });
-    });
-
-    document.getElementById("saveEvalBtn").addEventListener("click", async ()=>{
-      const teacherId = document.getElementById("evalTeacherSel").value;
-      const date = document.getElementById("evalDate").value;
-      if (!teacherId){ alert("Fadlan dooro macallin."); return; }
-      if (!date){ alert("Fadlan geli taariikhda."); return; }
-      const items = CRITERIA.map(c=>({ key:c.key, title:c.title, text:c.text, rating:evalState[c.key].rating, comment:evalState[c.key].comment }));
-      const subjSelVal = document.getElementById("evalSubjectSel").value;
-      const subject = subjSelVal === "__other__" ? document.getElementById("evalSubjectOther").value : subjSelVal;
-      const meta = {
-        school: document.getElementById("evalSchool").value,
-        class: document.getElementById("evalClass").value,
-        subject: subject,
-        supervisorName: document.getElementById("evalSupervisor").value,
-        conclusion: document.getElementById("evalConclusion").value
-      };
-      const btn = document.getElementById("saveEvalBtn"); btn.disabled=true; btn.textContent="Kaydinaya...";
-      try {
-        await addEvaluation(teacherId, date, items, meta);
-        preselectTeacher = null; currentTeacherId = teacherId;
-        await loadAll();
-        document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.remove("active"));
-        document.querySelector('nav.tabs button[data-tab="teachers"]').classList.add("active");
-        activeTab = "teachers"; render();
-      } catch(e){ alert("Khalad ayaa dhacay: "+e.message); btn.disabled=false; btn.textContent="💾 Kaydi Qiimeynta"; }
-    });
-
-    updateProgress();
-  }
-
-  // ---------- Reports tab: printable per-evaluation report ----------
-  let reportTeacherId = null;
-  let reportEvalId = null;
-
-  function renderReports(){
-    app.innerHTML = `
-      <div class="card no-print">
-        <h2>Warbixin — Dooro Macallin</h2>
-        ${teachers.length===0 ? `<div class="empty">Wali macallin lama gelin.</div>` : `
-        <label>Macallinka</label>
-        <select id="repTeacherSel">
-          <option value="">— Dooro —</option>
-          ${teachers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(t=>`<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("")}
-        </select>
-        <label>Qiimeynta (taariikhda)</label>
-        <select id="repEvalSel"><option value="">— Dooro macallin marka hore —</option></select>
-        <button class="btn gold no-print" id="printBtn" style="display:none;">🖨️ Daabac Warbixinta</button>
-        `}
-      </div>
-      <div id="reportArea"></div>
-    `;
-    if (teachers.length===0) return;
-
-    const teacherSel = document.getElementById("repTeacherSel");
-    const evalSel = document.getElementById("repEvalSel");
-    const printBtn = document.getElementById("printBtn");
-
-    teacherSel.addEventListener("change", ()=>{
-      reportTeacherId = teacherSel.value;
-      const evs = reportTeacherId ? teacherEvals(reportTeacherId) : [];
-      evalSel.innerHTML = `<option value="">— Dooro taariikh —</option>` + evs.slice().reverse().map(e=>`<option value="${e.id}">${e.date} (${fmt1(Number(e.score))}%)</option>`).join("");
-      document.getElementById("reportArea").innerHTML = "";
-      printBtn.style.display = "none";
-    });
-    evalSel.addEventListener("change", ()=>{
-      reportEvalId = evalSel.value;
-      buildReport();
-    });
-    printBtn.addEventListener("click", ()=> window.print());
-
-    function buildReport(){
-      const area = document.getElementById("reportArea");
-      if (!reportTeacherId || !reportEvalId){ area.innerHTML=""; printBtn.style.display="none"; return; }
-      const t = teachers.find(x=>x.id===reportTeacherId);
-      const evs = teacherEvals(reportTeacherId);
-      const idx = evs.findIndex(e=>e.id===reportEvalId);
-      if (idx===-1){ area.innerHTML=""; return; }
-      const e = evs[idx];
-      const prevEval = idx>0 ? evs[idx-1] : null;
-      const m = e.meta || {};
-      const score = Number(e.score);
-
-      area.innerHTML = `
-        <div class="report-header">
-          <img src="/logo.jpg" alt="logo">
-          <div>
-            <h2 style="margin:0;">${escapeHtml(m.school||"Dugsiga Howlwadaag Sare")}</h2>
-            <div style="font-size:.85rem;color:#555;">Foomka Kormeerka iyo Qiimeynta Macallinka</div>
-          </div>
-        </div>
-        <table>
-          <tr><th>Macallinka</th><td>${escapeHtml(t.name)}</td><th>Maaddada</th><td>${escapeHtml(m.subject||t.subject||"—")}</td></tr>
-          <tr><th>Fasalka</th><td>${escapeHtml(m.class||"—")}</td><th>Taariikhda</th><td>${e.date}</td></tr>
-          <tr><th>Kormeeraha</th><td colspan="3">${escapeHtml(m.supervisorName||"—")}</td></tr>
-        </table>
-
-        <h3>Natiijada Guud: ${fmt1(score)}% — ${overallLevel(score)}</h3>
-
-        <table>
-          <thead><tr><th>#</th><th>Qodobka</th><th>Qiimeynta (1-5)</th><th>Faallo</th></tr></thead>
-          <tbody>
-            ${(e.items||[]).map((it,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(it.title.replace(/^\d+\.\s*/,''))}</td><td style="text-align:center;font-weight:700;">${it.rating}</td><td>${escapeHtml(it.comment||"—")}</td></tr>`).join("")}
-          </tbody>
-        </table>
-
-        ${(m.conclusion||m.strengths||m.improvements||m.recommendations) ? `
-        <h3>Gunaad</h3>
-        ${m.conclusion?`<p>${escapeHtml(m.conclusion)}</p>`:""}
-        ${m.strengths?`<p><b>Waxyaabaha wanaagsan:</b> ${escapeHtml(m.strengths)}</p>`:""}
-        ${m.improvements?`<p><b>U baahan horumarinta:</b> ${escapeHtml(m.improvements)}</p>`:""}
-        ${m.recommendations?`<p><b>Talooyinka Kormeeraha:</b> ${escapeHtml(m.recommendations)}</p>`:""}
-        ` : ""}
-
-        ${prevEval ? `
-        <h3>📊 Isbarbardhigga qodob-qodobka (vs ${prevEval.date})</h3>
-        ${comparisonHtmlPrint(prevEval, e)}
-        ` : `<div class="cmp-summary" style="margin-top:14px;">📌 Kani waa qiimeyntii koowaad ee macallinkan — weli lama isbarbardhigi karo qiimeymo hore.</div>`}
-      `;
-      printBtn.style.display = "inline-block";
-    }
-
-    function comparisonHtmlPrint(prevEval, currEval){
-      const cmp = compareItems(prevEval, currEval);
-      const s = comparisonSummary(cmp);
-      let summaryText;
-      if (s.up > s.down) summaryText = `Guud ahaan macallinku wuxuu sameeyay HORUMAR — ${s.up} qodob kor u kacay, ${s.down} hoos u dhacay, ${s.same} isku mid ahaaday.`;
-      else if (s.down > s.up) summaryText = `Guud ahaan macallinku wuxuu sameeyay HOOS U DHAC — ${s.down} qodob hoos u dhacay, ${s.up} kor u kacay, ${s.same} isku mid ahaaday.`;
-      else summaryText = `Isbeddel weyn lama arag — ${s.up} kor u kacay, ${s.down} hoos u dhacay, ${s.same} isku mid ahaaday.`;
-      const rows = cmp.map(c=>{
-        const note = c.status==="up" ? `Horumar (+${c.delta})` : c.status==="down" ? `Hoos u dhac (${c.delta})` : "Isku mid";
-        return `<tr><td>${escapeHtml(c.title.replace(/^\d+\.\s*/,''))}</td><td style="text-align:center;">${c.prev!==null?c.prev:"—"}</td><td style="text-align:center;">${c.curr!==null?c.curr:"—"}</td><td>${note}</td></tr>`;
-      }).join("");
-      return `<p><b>${summaryText}</b></p><table><thead><tr><th>Qodobka</th><th>Hore</th><th>Hadda</th><th>Isbeddelka</th></tr></thead><tbody>${rows}</tbody></table>`;
-    }
-  }
-
-  boot();
-})();
-</script>
-</body>
-</html>
+      if (!subjectCatalog.some(s=>s.key===key)){
+        box.innerHTML = "";
+        return;
+      }
+      if (!sowSettings.term_start_date){
+        box.innerHTML = `<div class="sow-hint warn">⚠️ Taariikhda bilowga semester-ka wali lama dejin. Tag tab-ka 📘 Scheme of Work → ⚙️ Dejinta Semester-ka.</div>`;
+        return;
+      }
+      const topics = sowTopicsFor(key, className);
+      if (!topics.length){
+        box.innerHTML = `<div class="sow-hint warn">⚠️ Wali lama gelin Scheme of Work-ka maadadan/fasalkan. Tag tab-ka 📘 Scheme of Work → 📤 Soo Deji Scheme.</div>`;
+        return;
+      }
+      const subjTitle = (subjectCatalog.find(s=>s.key===key)||{}).title || "";
+      const wk = weekNoForDate(dateInput.value || today);
+      const expected = sowExpectedTopic(topics, wk);
+      box.dataset.expectedTopic = expected ? expected.topic : "";
+      box.dataset.expectedWeek = expected && expected.week_no!=null ? String(expected.we

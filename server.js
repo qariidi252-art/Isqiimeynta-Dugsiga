@@ -96,6 +96,26 @@ async function initDb() {
     }
   }
 
+  // ---------- Scheme of Work ----------
+  await pool.query(`CREATE TABLE IF NOT EXISTS sow_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS sow_topics (
+    id TEXT PRIMARY KEY,
+    subject_key TEXT NOT NULL,
+    class_name TEXT NOT NULL,
+    week_no INT,
+    topic TEXT NOT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT now()
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS sow_completions (
+    topic_id TEXT PRIMARY KEY REFERENCES sow_topics(id) ON DELETE CASCADE,
+    completed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_by TEXT DEFAULT ''
+  )`);
+
   console.log("✅ Database ready");
 }
 initDb().catch((e) => console.error("DB init error:", e));
@@ -390,6 +410,129 @@ app.put("/api/students/:id/subjects", requireAdmin, async (req, res) => {
 app.delete("/api/students/:id", requireAdmin, async (req, res) => {
   try {
     await pool.query("DELETE FROM students WHERE id=$1", [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+// ---------- Scheme of Work (admin) ----------
+app.get("/api/sow/settings", requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT key, value FROM sow_settings");
+    const out = {};
+    for (const r of rows) out[r.key] = r.value;
+    res.json(out);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+app.put("/api/sow/settings", requireAdmin, async (req, res) => {
+  try {
+    const { termStartDate } = req.body || {};
+    if (termStartDate !== undefined) {
+      await pool.query(
+        `INSERT INTO sow_settings (key, value) VALUES ('term_start_date', $1)
+         ON CONFLICT (key) DO UPDATE SET value=$1`,
+        [String(termStartDate || "")]
+      );
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+app.get("/api/sow/topics", requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT t.*, c.completed_at, c.completed_by,
+             (c.topic_id IS NOT NULL) AS done
+      FROM sow_topics t
+      LEFT JOIN sow_completions c ON c.topic_id = t.id
+      ORDER BY t.subject_key ASC, t.class_name ASC, t.sort_order ASC
+    `);
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+app.post("/api/sow/topics", requireAdmin, async (req, res) => {
+  try {
+    const { subjectKey, className, weekNo, topic } = req.body || {};
+    if (!subjectKey || !className || !topic || !String(topic).trim())
+      return res.status(400).json({ error: "subjectKey, className and topic are required" });
+    const { rows: maxRow } = await pool.query(
+      "SELECT COALESCE(MAX(sort_order),-1) AS m FROM sow_topics WHERE subject_key=$1 AND class_name=$2",
+      [subjectKey, className]
+    );
+    const id = crypto.randomUUID();
+    await pool.query(
+      "INSERT INTO sow_topics (id, subject_key, class_name, week_no, topic, sort_order) VALUES ($1,$2,$3,$4,$5,$6)",
+      [id, subjectKey, className, weekNo == null || weekNo === "" ? null : Number(weekNo), String(topic).trim(), maxRow[0].m + 1]
+    );
+    res.json({ ok: true, id });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+// Uploading a Scheme of Work replaces whatever was previously stored for that subject+class.
+app.post("/api/sow/topics/bulk", requireAdmin, async (req, res) => {
+  try {
+    const { subjectKey, className, rows } = req.body || {};
+    if (!subjectKey || !className) return res.status(400).json({ error: "subjectKey and className required" });
+    if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ error: "rows required" });
+    await pool.query("DELETE FROM sow_topics WHERE subject_key=$1 AND class_name=$2", [subjectKey, className]);
+    let created = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const topic = String((r && r.topic) || "").trim();
+      if (!topic) continue;
+      const weekNo = r && r.weekNo != null && r.weekNo !== "" ? Number(r.weekNo) : null;
+      const id = crypto.randomUUID();
+      await pool.query(
+        "INSERT INTO sow_topics (id, subject_key, class_name, week_no, topic, sort_order) VALUES ($1,$2,$3,$4,$5,$6)",
+        [id, subjectKey, className, weekNo, topic, i]
+      );
+      created++;
+    }
+    res.json({ ok: true, created });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+app.put("/api/sow/topics/:id/toggle", requireAdmin, async (req, res) => {
+  try {
+    const { done, completedBy } = req.body || {};
+    if (done) {
+      await pool.query(
+        `INSERT INTO sow_completions (topic_id, completed_by) VALUES ($1,$2)
+         ON CONFLICT (topic_id) DO UPDATE SET completed_at=now(), completed_by=$2`,
+        [req.params.id, String(completedBy || "")]
+      );
+    } else {
+      await pool.query("DELETE FROM sow_completions WHERE topic_id=$1", [req.params.id]);
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+app.delete("/api/sow/topics/:id", requireAdmin, async (req, res) => {
+  try {
+    await pool.query("DELETE FROM sow_topics WHERE id=$1", [req.params.id]);
     res.json({ ok: true });
   } catch (e) {
     console.error(e);

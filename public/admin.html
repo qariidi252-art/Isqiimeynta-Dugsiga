@@ -208,9 +208,12 @@
   // ---------- Scheme of Work state ----------
   let sowTopics = [];
   let sowSettings = {};
-  let sowView = "progress"; // progress | upload | settings
+  let sowView = "progress"; // progress | search | upload | settings
   let sowSubject = null;
   let sowClass = null;
+  let sowSearchSubject = null;
+  let sowSearchQuery = "";
+  let sowSearchSelectedTopicId = null;
 
   const app = document.getElementById("app");
   const PW_KEY = "qm_admin_pw";
@@ -1177,6 +1180,7 @@
     app.innerHTML = `
       <div class="subview-tabs no-print">
         <button data-sowv="progress" class="${sowView==="progress"?"active":""}">📊 Xaaladda Casharada</button>
+        <button data-sowv="search" class="${sowView==="search"?"active":""}">🔎 Raadi Cashar</button>
         <button data-sowv="upload" class="${sowView==="upload"?"active":""}">📤 Soo Deji Scheme</button>
         <button data-sowv="settings" class="${sowView==="settings"?"active":""}">⚙️ Dejinta Semester-ka</button>
       </div>
@@ -1186,7 +1190,8 @@
       b.addEventListener("click", ()=>{ sowView = b.dataset.sowv; render(); });
     });
     const body = document.getElementById("sowBody");
-    if (sowView==="upload") renderSowUpload(body);
+    if (sowView==="search") renderSowSearch(body);
+    else if (sowView==="upload") renderSowUpload(body);
     else if (sowView==="settings") renderSowSettings(body);
     else renderSowProgress(body);
   }
@@ -1254,6 +1259,89 @@
         if (confirm("Ma hubtaa inaad tirtirto casharkan?")) await deleteSowTopic(el.dataset.delsow);
       });
     });
+  }
+
+  function renderSowSearch(body){
+    if (!subjectCatalog.length){
+      body.innerHTML = `<div class="card"><div class="empty">Marka hore ku dar maado (tab-ka Ardayda → 🎓 Maadooyinka Dugsiga).</div></div>`;
+      return;
+    }
+    const classes = studentClasses().length ? studentClasses() : ["Form 4"];
+    if (!sowSearchSubject || !subjectCatalog.some(s=>s.key===sowSearchSubject)) sowSearchSubject = subjectCatalog[0].key;
+    const cls = classes.length===1 ? classes[0] : (sowClass && classes.includes(sowClass) ? sowClass : classes[0]);
+    const subjTitle = (subjectCatalog.find(s=>s.key===sowSearchSubject)||{}).title || "";
+
+    body.innerHTML = `
+      <div class="card">
+        <h2>🔎 Raadi Cashar — Hel Xaaladdiisa Scheme of Work-ka</h2>
+        <label>Maadada</label>
+        <select id="sowSearchSubjectSel">${subjectCatalog.map(s=>`<option value="${escapeHtml(s.key)}" ${s.key===sowSearchSubject?"selected":""}>${escapeHtml(s.title)}</option>`).join("")}</select>
+        ${classes.length>1 ? `<label>Fasalka</label><select id="sowSearchClassSel">${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===cls?"selected":""}>${escapeHtml(c)}</option>`).join("")}</select>` : ""}
+        <label>Cinwaanka Cashaarka</label>
+        <input type="text" id="sowSearchInput" placeholder="tusaale: Simple harmonic motion; period in SHM" value="${escapeHtml(sowSearchQuery)}">
+        <div id="sowSearchResults"></div>
+      </div>
+      <div id="sowSearchReport"></div>
+    `;
+    document.getElementById("sowSearchSubjectSel").addEventListener("change",(e)=>{ sowSearchSubject=e.target.value; sowSearchSelectedTopicId=null; sowSearchQuery=""; render(); });
+    const clsSel = document.getElementById("sowSearchClassSel");
+    if (clsSel) clsSel.addEventListener("change",(e)=>{ sowClass=e.target.value; sowSearchSelectedTopicId=null; render(); });
+
+    const input = document.getElementById("sowSearchInput");
+    const resultsBox = document.getElementById("sowSearchResults");
+    const norm = (s)=>String(s||"").toLowerCase().trim();
+
+    function renderResults(){
+      const q = norm(sowSearchQuery);
+      if (!q){ resultsBox.innerHTML = ""; return; }
+      const topics = sowTopicsFor(sowSearchSubject, cls);
+      const matches = topics.filter(t=>{
+        const nt = norm(t.topic);
+        return nt.includes(q) || q.includes(nt);
+      }).slice(0,10);
+      resultsBox.innerHTML = matches.length ? matches.map(t=>`<div class="student-row" data-picktopic="${t.id}">
+        <div><div class="name">${t.week_no!=null?`<span style="color:var(--text-dim);font-weight:600;">W${t.week_no}</span> `:""}${escapeHtml(t.topic)}</div></div>
+        <span class="badge ${t.done?'good':'bad'}">${t.done?'✓ Dhammaystiran':'Lama dhammayn'}</span>
+      </div>`).join("") : `<div class="empty">Wax cashar la mid ah lama helin Scheme of Work-ka "${escapeHtml(subjTitle)}" — ${escapeHtml(cls)}.</div>`;
+      resultsBox.querySelectorAll("[data-picktopic]").forEach(el=>{
+        el.addEventListener("click", ()=>{ sowSearchSelectedTopicId = el.dataset.picktopic; renderReport(); });
+      });
+    }
+    input.addEventListener("input", (e)=>{ sowSearchQuery = e.target.value; sowSearchSelectedTopicId=null; renderResults(); renderReport(); });
+    renderResults();
+
+    function renderReport(){
+      const area = document.getElementById("sowSearchReport");
+      const t = sowSearchSelectedTopicId ? sowTopics.find(x=>x.id===sowSearchSelectedTopicId) : null;
+      if (!t){ area.innerHTML = ""; return; }
+      const week = currentWeekNo();
+      let statusHtml;
+      if (week==null){
+        statusHtml = `<div class="compare-note pending">⏳ Wali lama dejin taariikhda bilowga semester-ka — tag "⚙️ Dejinta Semester-ka".</div>`;
+      } else if (t.week_no==null){
+        statusHtml = `<div class="compare-note pending">ℹ️ Casharkan lama qorin toddobaadkiisa Scheme of Work-ka, ee lama xisaabin karo in uu dib dhacsan yahay iyo in kale.</div>`;
+      } else if (t.done){
+        statusHtml = `<div class="compare-note ok">✅ Casharkan waa la dhammeeyay (wuxuu ku beegnaa Toddobaad ${t.week_no}).</div>`;
+      } else if (t.week_no <= week){
+        const behind = week - t.week_no;
+        statusHtml = `<div class="compare-note pending">⚠️ Waad ka dib dhacsan tahay casharkan. Wuxuu ku beegnaa Toddobaad ${t.week_no}, hadda waxaan ku jirnaa Toddobaad ${week} — dib u dhac ${behind} toddobaad ah.</div>`;
+      } else {
+        statusHtml = `<div class="compare-note ok">🕒 Weli lama gaadhin casharkan — wuxuu ku beegan yahay Toddobaad ${t.week_no}, hadda waxaan ku jirnaa Toddobaad ${week}. Waad la socotaa jadwalka.</div>`;
+      }
+      area.innerHTML = `
+        <div class="card">
+          <h2>${escapeHtml(subjTitle)} — ${escapeHtml(cls)}</h2>
+          <p style="font-size:.85rem;"><b>${escapeHtml(t.topic)}</b>${t.week_no!=null?` · Toddobaadka la qorsheeyay: <b>${t.week_no}</b>`:""}${week!=null?` · Toddobaadka hadda: <b>${week}</b>`:""}</p>
+          ${statusHtml}
+          <button class="subj-chip ${t.done?'sel':''}" id="btnSowSearchToggle">${t.done?'✕ Ka Saar Calaamadda':'✓ Calaamadi Dhammaystiran'}</button>
+        </div>
+      `;
+      document.getElementById("btnSowSearchToggle").addEventListener("click", async ()=>{
+        const btn = document.getElementById("btnSowSearchToggle"); btn.disabled=true;
+        try { await toggleSowTopic(t.id, !t.done); } finally { btn.disabled=false; }
+      });
+    }
+    if (sowSearchSelectedTopicId) renderReport();
   }
 
   function renderSowUpload(body){

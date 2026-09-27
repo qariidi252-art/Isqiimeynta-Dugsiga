@@ -182,21 +182,8 @@
   ];
   const TOTAL_ITEMS = CRITERIA.length;
 
-  // ---------- Form 4 subjects (fixed list, must match server.js) ----------
-  const STUDENT_SUBJECTS = [
-    { key:"mathematics", title:"Mathematics" },
-    { key:"physics", title:"Physics" },
-    { key:"chemistry", title:"Chemistry" },
-    { key:"biology", title:"Biology" },
-    { key:"english", title:"English" },
-    { key:"af_soomaali", title:"Af-Soomaali" },
-    { key:"arabic", title:"Arabic" },
-    { key:"history", title:"History" },
-    { key:"geography", title:"Geography" },
-    { key:"business_studies", title:"Business Studies" },
-    { key:"tarbiyo", title:"Tarbiyo" },
-    { key:"ict", title:"ICT" }
-  ];
+  // Subjects are managed dynamically from the server (see "Maadooyinka" subview)
+  let subjectCatalog = []; // [{key, title}]
 
   let teachers = [];
   let evaluations = [];
@@ -208,11 +195,13 @@
   let evalState = {};
 
   // ---------- Students tab state ----------
-  let studentView = "assign"; // assign | report | manage
+  let studentView = "assign"; // assign | report | manage | subjects
   let assignStudentId = null;
   let assignSelected = [];
   let reportClass = null;
   let reportSection = "__ALL__";
+  let completeReportClass = "__ALL__";
+  let completeReportSection = "__ALL__";
   let studentSearchQuery = "";
 
   const app = document.getElementById("app");
@@ -265,13 +254,15 @@
       teachers = await api("/api/teachers");
       evaluations = await api("/api/evaluations");
       students = await api("/api/students");
+      const subjRows = await api("/api/subjects");
+      subjectCatalog = subjRows.map(s=>({ key: s.id, title: s.title }));
       render();
     } catch(e){ console.error(e); }
   }
 
   function logout(){
     localStorage.removeItem(PW_KEY);
-    teachers = []; evaluations = []; students = []; currentTeacherId = null; activeTab = "dashboard";
+    teachers = []; evaluations = []; students = []; subjectCatalog = []; currentTeacherId = null; activeTab = "dashboard";
     document.querySelectorAll("nav.tabs button[data-tab]").forEach(b=>b.classList.remove("active"));
     document.querySelector('nav.tabs button[data-tab="dashboard"]').classList.add("active");
     showLogin();
@@ -359,6 +350,8 @@
   async function addStudentsBulk(rows){ const r = await api("/api/students/bulk", { method:"POST", body: JSON.stringify({rows}) }); await loadAll(); return r; }
   async function updateStudentSubjects(id, subjects){ await api("/api/students/"+id+"/subjects", { method:"PUT", body: JSON.stringify({subjects}) }); await loadAll(); }
   async function deleteStudent(id){ await api("/api/students/"+id, { method:"DELETE" }); if (assignStudentId===id) assignStudentId=null; await loadAll(); }
+  async function addSubject(title){ await api("/api/subjects", { method:"POST", body: JSON.stringify({title}) }); await loadAll(); }
+  async function deleteSubject(key){ await api("/api/subjects/"+key, { method:"DELETE" }); await loadAll(); }
 
   function studentClasses(){ return Array.from(new Set(students.map(s=>s.class_name).filter(Boolean))).sort(); }
   function studentSections(className){ return Array.from(new Set(students.filter(s=>s.class_name===className).map(s=>s.section).filter(s=>s!=="" && s!=null))).sort(); }
@@ -480,6 +473,7 @@
     const totalEvals = evaluations.length;
     const overallScore = totalEvals ? fmt1(evaluations.reduce((a,e)=>a+Number(e.score),0)/totalEvals) : "—";
     const needAttention = teachers.filter(t=>{ const s=teacherLatestScore(t.id); return s!==null && s<50; }).length;
+    const studentsComplete = (subjectCatalog.length && students.length) ? students.filter(s=>(s.subjects||[]).length===subjectCatalog.length).length : 0;
 
     let rows = teachers.map(t=>{
       const evs = teacherEvals(t.id);
@@ -501,6 +495,7 @@
         <div class="stat"><div class="num">${totalEvals}</div><div class="lbl">Qiimeymo Guud</div></div>
         <div class="stat"><div class="num">${overallScore}%</div><div class="lbl">Celceliska Guud</div></div>
         <div class="stat"><div class="num" style="color:${needAttention?'var(--bad)':'var(--good)'}">${needAttention}</div><div class="lbl">U Baahan Taageero</div></div>
+        <div class="stat"><div class="num">${studentsComplete}/${students.length}</div><div class="lbl">Arday Dhammaystiray Maadooyinka</div></div>
       </div>
       <div class="card">
         <h2>Liiska Macallimiinta</h2>
@@ -682,6 +677,8 @@
         <button data-sv="assign" class="${studentView==="assign"?"active":""}">📚 Qeybinta Maadooyinka</button>
         <button data-sv="report" class="${studentView==="report"?"active":""}">🖨️ Warbixinta Fasalka</button>
         <button data-sv="manage" class="${studentView==="manage"?"active":""}">➕ Ku Dar / Maarayn Ardayda</button>
+        <button data-sv="complete" class="${studentView==="complete"?"active":""}">✅ Ardayda Dhammaystay</button>
+        <button data-sv="subjects" class="${studentView==="subjects"?"active":""}">🎓 Maadooyinka Dugsiga</button>
       </div>
       <div id="studentBody"></div>
     `;
@@ -691,7 +688,46 @@
     const body = document.getElementById("studentBody");
     if (studentView==="assign") renderAssignSubjects(body);
     else if (studentView==="report") renderClassReport(body);
+    else if (studentView==="complete") renderCompleteReport(body);
+    else if (studentView==="subjects") renderSubjectsManager(body);
     else renderManageStudents(body);
+  }
+
+  function renderSubjectsManager(body){
+    body.innerHTML = `
+      <div class="card">
+        <h2>➕ Ku Dar Maado Cusub</h2>
+        <label>Magaca Maadada</label>
+        <input type="text" id="newSubjectTitle" placeholder="tusaale: Physical Education">
+        <button class="btn" id="btnAddSubject">➕ Ku Dar Maadada</button>
+      </div>
+      <div class="card">
+        <h2>Maadooyinka Dugsiga (${subjectCatalog.length})</h2>
+        <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">
+          Haddii aad maado tirtirto, waxay si otomaatig ah uga baxaysaa dhammaan ardayda hore u haystay.
+        </div>
+        ${subjectCatalog.length===0 ? `<div class="empty">Wali maado lama gelin.</div>` :
+        subjectCatalog.map(sub=>`<div class="student-row" style="cursor:default;">
+          <div class="name">${escapeHtml(sub.title)}</div>
+          <button class="del-x" data-delsub="${sub.key}" title="Tirtir">✕ Tirtir</button>
+        </div>`).join("")}
+      </div>
+    `;
+    document.getElementById("btnAddSubject").addEventListener("click", async ()=>{
+      const input = document.getElementById("newSubjectTitle");
+      const val = input.value.trim();
+      if (!val){ alert("Fadlan geli magaca maadada."); return; }
+      const btn = document.getElementById("btnAddSubject"); btn.disabled=true;
+      try { await addSubject(val); } finally { btn.disabled=false; }
+    });
+    body.querySelectorAll("[data-delsub]").forEach(el=>{
+      el.addEventListener("click", async ()=>{
+        const sub = subjectCatalog.find(s=>s.key===el.dataset.delsub);
+        if (confirm(`Ma hubtaa inaad tirtirto maadada "${sub?sub.title:''}"? Dhammaan ardayda haysta maadadan waa laga saari doonaa.`)) {
+          await deleteSubject(el.dataset.delsub);
+        }
+      });
+    });
   }
 
   function renderAssignSubjects(body){
@@ -720,7 +756,7 @@
         const held = (s.subjects||[]).length;
         return `<div class="student-row" data-search-open="${s.id}">
           <div><div class="name">${escapeHtml(s.name)}</div><div class="sub">${escapeHtml(s.adm_no||"")} · ${escapeHtml(s.class_name)}${s.section?` (${escapeHtml(s.section)})`:""}</div></div>
-          <span class="badge ${held===12?'good':held===0?'bad':'warn'}">${held}/12 maado</span>
+          <span class="badge ${held===subjectCatalog.length?'good':held===0?'bad':'warn'}">${held}/${subjectCatalog.length} maado</span>
         </div>`;
       }).join("") : `<div class="empty">Wax arday ah lama helin.</div>`;
       resultsBox.querySelectorAll("[data-search-open]").forEach(el=>{
@@ -744,12 +780,12 @@
       const panel = document.getElementById("subjectPanel");
       if (!st){ panel.innerHTML=""; return; }
       const held = st.subjects||[];
-      const missing = STUDENT_SUBJECTS.filter(sub=>!held.includes(sub.key));
+      const missing = subjectCatalog.filter(sub=>!held.includes(sub.key));
       panel.innerHTML = `
         <div class="card">
           <h2>Maadooyinka — ${escapeHtml(st.name)}</h2>
-          <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:10px;">${escapeHtml(st.adm_no||"")} · ${escapeHtml(st.class_name)}${st.section?` (${escapeHtml(st.section)})`:""} · Haysta ${held.length}/12 maado</div>
-          ${missing.length===0 ? `<div class="empty">✅ Ardaygan wuxuu haystaa dhammaan 12-da maado.</div>` : `
+          <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:10px;">${escapeHtml(st.adm_no||"")} · ${escapeHtml(st.class_name)}${st.section?` (${escapeHtml(st.section)})`:""} · Haysta ${held.length}/${subjectCatalog.length} maado</div>
+          ${missing.length===0 ? `<div class="empty">✅ Ardaygan wuxuu haystaa dhammaan ${subjectCatalog.length}-da maado.</div>` : `
           <label>Maadooyinka Kamaqan (tick kuwa uu hadda qaadanayo)</label>
           <div class="subj-grid">
             ${missing.map(sub=>`<button class="subj-chip ${assignSelected.includes(sub.key)?'sel':''}" data-subj="${sub.key}">${assignSelected.includes(sub.key)?'✓ ':''}${escapeHtml(sub.title)}</button>`).join("")}
@@ -819,8 +855,8 @@
 
     const rows = list.map((s,i)=>{
       const held = s.subjects||[];
-      const missing = STUDENT_SUBJECTS.filter(sub=>!held.includes(sub.key)).map(sub=>sub.title);
-      const cells = STUDENT_SUBJECTS.map(sub=>`<td>${held.includes(sub.key)?'<span class="yes">✓</span>':'<span class="no">✗</span>'}</td>`).join("");
+      const missing = subjectCatalog.filter(sub=>!held.includes(sub.key)).map(sub=>sub.title);
+      const cells = subjectCatalog.map(sub=>`<td>${held.includes(sub.key)?'<span class="yes">✓</span>':'<span class="no">✗</span>'}</td>`).join("");
       return `<tr>
         <td>${i+1}</td>
         <td class="namecell">${escapeHtml(s.adm_no||"")}</td>
@@ -832,7 +868,7 @@
 
     const totalHeld = list.reduce((a,s)=>a+((s.subjects||[]).length),0);
     const avg = (totalHeld/list.length).toFixed(1);
-    const complete = list.filter(s=>(s.subjects||[]).length===12).length;
+    const complete = list.filter(s=>(s.subjects||[]).length===subjectCatalog.length).length;
 
     area.innerHTML = `
       <div class="report-header">
@@ -842,13 +878,85 @@
           <div style="font-size:.85rem;color:#555;">Warbixinta Maadooyinka Ardayda — ${escapeHtml(reportClass)}${reportSection!=="__ALL__"?` (${escapeHtml(reportSection)})`:""}</div>
         </div>
       </div>
-      <p style="font-size:.85rem;">Wadarta ardayda: <b>${list.length}</b> · Celceliska maadooyinka qofkiiba: <b>${avg}</b> · Ku dhammaystiray 12-da maado: <b>${complete}</b></p>
+      <p style="font-size:.85rem;">Wadarta ardayda: <b>${list.length}</b> · Celceliska maadooyinka qofkiiba: <b>${avg}</b> · Ku dhammaystiray ${subjectCatalog.length}-da maado: <b>${complete}</b></p>
       <div style="overflow-x:auto;">
       <table class="subj-table">
         <thead><tr>
           <th>#</th><th class="namecell">Adm No</th><th class="namecell">Magaca</th>
-          ${STUDENT_SUBJECTS.map(sub=>`<th title="${escapeHtml(sub.title)}">${escapeHtml(sub.title.slice(0,3))}</th>`).join("")}
+          ${subjectCatalog.map(sub=>`<th title="${escapeHtml(sub.title)}">${escapeHtml(sub.title.slice(0,3))}</th>`).join("")}
           <th class="namecell">Maadooyinka Kamaqan</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      </div>
+    `;
+  }
+
+  function renderCompleteReport(body){
+    const classes = studentClasses();
+    if (!classes.length){
+      body.innerHTML = `<div class="card"><div class="empty">Wali arday lama gelin.</div></div>`;
+      return;
+    }
+    if (completeReportClass !== "__ALL__" && !classes.includes(completeReportClass)) completeReportClass = "__ALL__";
+    const sections = completeReportClass==="__ALL__" ? [] : studentSections(completeReportClass);
+    if (completeReportSection !== "__ALL__" && !sections.includes(completeReportSection)) completeReportSection = "__ALL__";
+
+    body.innerHTML = `
+      <div class="card no-print">
+        <h2>Warbixinta Ardayda Dhammaystay — Dooro (ikhtiyaari)</h2>
+        <label>Fasalka</label>
+        <select id="compClassSel">
+          <option value="__ALL__" ${completeReportClass==="__ALL__"?"selected":""}>Dhammaan Fasallada</option>
+          ${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===completeReportClass?"selected":""}>${escapeHtml(c)}</option>`).join("")}
+        </select>
+        <label>Qaybta</label>
+        <select id="compSectionSel" ${completeReportClass==="__ALL__"?"disabled":""}>
+          <option value="__ALL__" ${completeReportSection==="__ALL__"?"selected":""}>Dhammaan Qaybaha</option>
+          ${sections.map(s=>`<option value="${escapeHtml(s)}" ${s===completeReportSection?"selected":""}>${escapeHtml(s)}</option>`).join("")}
+        </select>
+        <button class="btn gold" id="printCompleteBtn">🖨️ Daabac Warbixinta</button>
+      </div>
+      <div id="completeReportArea"></div>
+    `;
+    document.getElementById("compClassSel").addEventListener("change", (e)=>{ completeReportClass=e.target.value; completeReportSection="__ALL__"; render(); });
+    document.getElementById("compSectionSel").addEventListener("change", (e)=>{ completeReportSection=e.target.value; render(); });
+    document.getElementById("printCompleteBtn").addEventListener("click", ()=>window.print());
+
+    const total = subjectCatalog.length;
+    const pool = students.filter(s=>
+      (completeReportClass==="__ALL__" || s.class_name===completeReportClass) &&
+      (completeReportSection==="__ALL__" || (s.section||"")===completeReportSection)
+    );
+    const list = total>0 ? pool.filter(s=>(s.subjects||[]).length===total) : [];
+    const list_sorted = list.slice().sort((a,b)=>
+      a.class_name.localeCompare(b.class_name) || (a.section||"").localeCompare(b.section||"") || a.name.localeCompare(b.name)
+    );
+
+    const area = document.getElementById("completeReportArea");
+    if (!total){ area.innerHTML = `<div class="empty">Wali maado lama gelin.</div>`; return; }
+    if (!list_sorted.length){ area.innerHTML = `<div class="empty">Wali arday ma jiro oo dhammaystiray dhammaan ${total}-da maado.</div>`; return; }
+
+    const rows = list_sorted.map((s,i)=>`<tr>
+      <td>${i+1}</td>
+      <td class="namecell">${escapeHtml(s.adm_no||"")}</td>
+      <td class="namecell">${escapeHtml(s.name)}</td>
+      <td class="namecell">${escapeHtml(s.class_name)}${s.section?` (${escapeHtml(s.section)})`:""}</td>
+    </tr>`).join("");
+
+    area.innerHTML = `
+      <div class="report-header">
+        <img src="/logo.jpg" alt="logo">
+        <div>
+          <h2 style="margin:0;">Dugsiga Howlwadaag Sare</h2>
+          <div style="font-size:.85rem;color:#555;">Warbixinta Ardayda Dhammaystay Dhammaan ${total}-da Maado${completeReportClass!=="__ALL__"?` — ${escapeHtml(completeReportClass)}${completeReportSection!=="__ALL__"?` (${escapeHtml(completeReportSection)})`:""}`:""}</div>
+        </div>
+      </div>
+      <p style="font-size:.85rem;">Wadarta ardayda dhammaystay: <b>${list_sorted.length}</b> / ${pool.length}</p>
+      <div style="overflow-x:auto;">
+      <table class="subj-table">
+        <thead><tr>
+          <th>#</th><th class="namecell">Adm No</th><th class="namecell">Magaca</th><th class="namecell">Fasalka</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -903,7 +1011,7 @@
             if (!list.length) return "";
             return `<div style="margin-bottom:10px;"><div style="font-weight:700;font-size:.85rem;margin:8px 0 4px;">${escapeHtml(c)}${sec?` (${escapeHtml(sec)})`:""} — ${list.length}</div>
               ${list.map(s=>`<div class="student-row" style="cursor:default;">
-                <div><div class="name">${escapeHtml(s.name)}</div><div class="sub">${escapeHtml(s.adm_no||"")} · ${(s.subjects||[]).length}/12 maado</div></div>
+                <div><div class="name">${escapeHtml(s.name)}</div><div class="sub">${escapeHtml(s.adm_no||"")} · ${(s.subjects||[]).length}/${subjectCatalog.length} maado</div></div>
                 <button class="del-x" data-delst="${s.id}" title="Tirtir">✕</button>
               </div>`).join("")}
             </div>`;

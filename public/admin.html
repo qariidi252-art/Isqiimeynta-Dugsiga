@@ -138,8 +138,6 @@
   </div>
 </header>
 
-<div id="bootLoading" style="padding:60px 16px;text-align:center;color:var(--text-dim);font-size:.9rem;">⏳ Soo dejinaya...</div>
-
 <div id="loginScreen" style="display:none;">
   <div class="card" style="text-align:center;">
     <img class="logo" src="/logo.jpg" alt="logo">
@@ -228,48 +226,24 @@
     return res.status === 204 ? null : res.json();
   }
 
-  function hideBootLoading(){
-    const b = document.getElementById("bootLoading");
-    if (b) b.style.display = "none";
-  }
   function showLogin(err){
-    hideBootLoading();
     document.getElementById("loginScreen").style.display = "block";
     document.getElementById("appShell").style.display = "none";
     document.getElementById("loginErr").textContent = err || "";
   }
   function showApp(){
-    hideBootLoading();
     document.getElementById("loginScreen").style.display = "none";
     document.getElementById("appShell").style.display = "block";
   }
 
-  // Fetch with a timeout so a slow/cold-starting server shows a message instead of leaving the screen blank forever.
-  async function fetchWithTimeout(url, opts, timeoutMs){
-    const controller = new AbortController();
-    const timer = setTimeout(()=>controller.abort(), timeoutMs || 20000);
-    try {
-      return await fetch(url, Object.assign({}, opts||{}, { signal: controller.signal }));
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
   document.getElementById("loginBtn").addEventListener("click", async ()=>{
     const pw = document.getElementById("pwInput").value;
-    const btn = document.getElementById("loginBtn");
-    btn.disabled = true; btn.textContent = "Sugaya...";
-    document.getElementById("loginErr").textContent = "";
     try {
-      const res = await fetchWithTimeout("/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password: pw}) }, 20000);
+      const res = await fetch("/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password: pw}) });
       const j = await res.json();
       if (j.ok){ localStorage.setItem(PW_KEY, pw); showApp(); loadAll(); }
       else document.getElementById("loginErr").textContent = "Sirta waa qalad.";
-    } catch(e){
-      document.getElementById("loginErr").textContent = (e && e.name==="AbortError")
-        ? "Server-ku wuu raagay inuu jawaabo — laga yaabee inuu hadda soo toosayo (cold start). Fadlan sug daqiiqad kadibna isku day mar kale."
-        : "Khalad server ah. Hubi internetka oo isku day mar kale.";
-    } finally { btn.disabled = false; btn.textContent = "Gal"; }
+    } catch(e){ document.getElementById("loginErr").textContent = "Khalad server ah."; }
   });
   document.getElementById("pwInput").addEventListener("keydown", e=>{ if (e.key==="Enter") document.getElementById("loginBtn").click(); });
 
@@ -309,14 +283,10 @@
     const pw = getPw();
     if (!pw){ showLogin(); return; }
     try {
-      const res = await fetchWithTimeout("/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password: pw}) }, 20000);
+      const res = await fetch("/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password: pw}) });
       const j = await res.json();
       if (j.ok){ showApp(); loadAll(); } else showLogin();
-    } catch(e){
-      showLogin(e && e.name==="AbortError"
-        ? "Server-ku wuu raagay inuu jawaabo — laga yaabee inuu hadda soo toosayo (cold start). Fadlan sug daqiiqad kadibna dib u geli."
-        : "Khalad xidhiidh server ah. Hubi internetka oo isku day mar kale.");
-    }
+    } catch(e){ showLogin("Khalad xidhiidh server ah."); }
   }
 
   function fmt1(n){ return (Math.round(n*10)/10).toFixed(1); }
@@ -426,14 +396,7 @@
         weekNo = Number(cols[0]);
         topic = cols.slice(1).join(" ").trim();
       } else {
-        // Loosely-formatted lines (common when text comes from a PDF or Word file):
-        // "Week 1: Topic", "Week 1 - Topic", "1. Topic", "1) Topic", "1 - Topic", "1   Topic"
-        const trimmed = line.trim();
-        const wkMatch = trimmed.match(/^(?:week|wk|toddobaad(?:ka)?)\s*#?\s*(\d{1,2})\s*[:\-.)]?\s+(.+)$/i);
-        const numMatch = !wkMatch ? trimmed.match(/^(\d{1,2})\s*[-.):]?\s+(.+)$/) : null;
-        if (wkMatch){ weekNo = Number(wkMatch[1]); topic = wkMatch[2].trim(); }
-        else if (numMatch){ weekNo = Number(numMatch[1]); topic = numMatch[2].trim(); }
-        else { topic = cols.join(" ").trim(); }
+        topic = cols.join(" ").trim();
       }
       if (!topic) continue;
       rows.push({ weekNo, topic });
@@ -469,65 +432,9 @@
     }
     return rows;
   }
-  // Load an external script only when actually needed (keeps normal page load light/fast).
-  const _loadedScripts = {};
-  function loadScriptOnce(url){
-    if (_loadedScripts[url]) return _loadedScripts[url];
-    _loadedScripts[url] = new Promise((resolve, reject)=>{
-      const s = document.createElement("script");
-      s.src = url;
-      s.onload = ()=>resolve();
-      s.onerror = ()=>{ delete _loadedScripts[url]; reject(new Error("Ma suurtageli in la soo shubo maktabadda ("+url+"). Hubi internetka.")); };
-      document.head.appendChild(s);
-    });
-    return _loadedScripts[url];
-  }
-
-  // Extract text from a PDF by grouping text items into lines using their vertical position.
-  function extractTextFromPdf(file){
-    return new Promise(async (resolve, reject)=>{
-      try {
-        if (!window.pdfjsLib){
-          await loadScriptOnce("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js");
-        }
-        pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-      } catch(e){ reject(new Error("Maktabadda PDF lama soo shubin. Hubi internetka.")); return; }
-      const reader = new FileReader();
-      reader.onerror = ()=>reject(new Error("Ma suurtageli in la akhriyo PDF-ka."));
-      reader.onload = async ()=>{
-        try {
-          const data = new Uint8Array(reader.result);
-          const pdf = await pdfjsLib.getDocument({ data }).promise;
-          let fullText = "";
-          for (let p=1;p<=pdf.numPages;p++){
-            const page = await pdf.getPage(p);
-            const content = await page.getTextContent();
-            const byLine = {};
-            content.items.forEach(it=>{
-              const y = Math.round(it.transform[5]);
-              if (!byLine[y]) byLine[y] = [];
-              byLine[y].push({ str: it.str, x: it.transform[4] });
-            });
-            const ys = Object.keys(byLine).map(Number).sort((a,b)=>b-a); // top -> bottom
-            ys.forEach(y=>{
-              const line = byLine[y].sort((a,b)=>a.x-b.x).map(it=>it.str).join(" ").replace(/\s+/g," ").trim();
-              if (line) fullText += line + "\n";
-            });
-          }
-          resolve(fullText);
-        } catch(e){ reject(new Error("Ma suurtageli in la akhriyo PDF-ka: " + (e && e.message ? e.message : e))); }
-      };
-      reader.readAsArrayBuffer(file);
-    });
-  }
-
   function extractSowRowsFromFile(file){
-    const name = (file.name||"").toLowerCase();
-    const isPdf = name.endsWith(".pdf") || file.type==="application/pdf";
-    const isWord = name.endsWith(".doc") || name.endsWith(".docx");
-    if (isPdf) return extractTextFromPdf(file).then(text=>parseSowRows(text));
-    if (isWord) return Promise.reject(new Error("Qaabka Word (.doc/.docx) hadda lama taageerayo — fadlan isticmaal Excel, CSV ama PDF."));
     return new Promise((resolve, reject)=>{
+      const name = (file.name||"").toLowerCase();
       const isCsv = name.endsWith(".csv") || file.type==="text/csv";
       const reader = new FileReader();
       reader.onerror = ()=>reject(new Error("Ma suurtageli in la akhriyo file-ka."));
@@ -1272,7 +1179,6 @@
         <button data-sowv="progress" class="${sowView==="progress"?"active":""}">📊 Xaaladda Casharada</button>
         <button data-sowv="upload" class="${sowView==="upload"?"active":""}">📤 Soo Deji Scheme</button>
         <button data-sowv="settings" class="${sowView==="settings"?"active":""}">⚙️ Dejinta Semester-ka</button>
-        <button data-sowv="lookup" class="${sowView==="lookup"?"active":""}">🔍 Warbixin Cashar</button>
       </div>
       <div id="sowBody"></div>
     `;
@@ -1282,7 +1188,6 @@
     const body = document.getElementById("sowBody");
     if (sowView==="upload") renderSowUpload(body);
     else if (sowView==="settings") renderSowSettings(body);
-    else if (sowView==="lookup") renderSowLookup(body);
     else renderSowProgress(body);
   }
 
@@ -1370,12 +1275,12 @@
         <select id="sowClassSel2">${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===sowClass?"selected":""}>${escapeHtml(c)}</option>`).join("")}</select>
       </div>
       <div class="card">
-        <h2>📤 Soo Deji Scheme of Work (Excel, CSV ama PDF)</h2>
+        <h2>📤 Soo Deji Scheme of Work (Excel/CSV)</h2>
         <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">
-          Excel/CSV waa in uu leeyahay tiirar "Week" iyo "Topic" (ama "Lesson"). PDF sidoo kale waa la aqbalaa — xariiq kasta ha ku qorneyd hal cashar, tusaale "1. Simple harmonic motion" ama "Toddobaad 1: Simple harmonic motion". Soo dejintani way <b>beddeshaa</b> Scheme of Work-kii hore ee maadadan iyo fasalkan.
+          File-ku waa in uu leeyahay tiirar "Week" iyo "Topic" (ama "Lesson"). Soo dejintani way <b>beddeshaa</b> Scheme of Work-kii hore ee maadadan iyo fasalkan.
           ${existing.length ? ` Hadda waxaa jira ${existing.length} cashar oo la geliyay (${existing.filter(t=>t.done).length} dhammaystiran).` : ""}
         </div>
-        <input type="file" id="sowFileInput" accept=".xlsx,.xls,.csv,.pdf">
+        <input type="file" id="sowFileInput" accept=".xlsx,.xls,.csv">
         <div id="sowFileResult" style="font-size:.8rem;color:var(--text-dim);margin-top:8px;"></div>
       </div>
       <div class="card">
@@ -1484,128 +1389,6 @@
       const btn = document.getElementById("btnSaveSowSettings"); btn.disabled=true;
       try { await saveSowSettings(val); } finally { btn.disabled=false; }
     });
-  }
-
-  // ---------- Scheme of Work: report by subject + lesson title ----------
-  function normalizeTopicText(s){
-    return String(s||"")
-      .toLowerCase()
-      .normalize("NFKD").replace(/[\u0300-\u036f]/g,"")
-      .replace(/[^a-z0-9\s]/g," ")
-      .replace(/\s+/g," ")
-      .trim();
-  }
-  function findSowTopicMatches(subjectKey, query){
-    const q = normalizeTopicText(query);
-    if (!q) return [];
-    const qWords = new Set(q.split(" ").filter(Boolean));
-    const candidates = sowTopics.filter(t=>t.subject_key===subjectKey);
-    const scored = candidates.map(t=>{
-      const norm = normalizeTopicText(t.topic);
-      let score = 0;
-      if (norm === q) score = 100;
-      else if (norm.includes(q) || q.includes(norm)) score = 80;
-      else {
-        const words = new Set(norm.split(" ").filter(Boolean));
-        let common = 0;
-        qWords.forEach(w=>{ if (words.has(w)) common++; });
-        score = qWords.size ? Math.round((common/qWords.size)*60) : 0;
-      }
-      return { t, score };
-    }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score);
-    return scored;
-  }
-
-  function renderSowLookup(body){
-    if (!subjectCatalog.length){
-      body.innerHTML = `<div class="card"><div class="empty">Wali maadooyin lama gelin. Tag tab-ka "Ardayda / Maadooyinka" si aad u darto.</div></div>`;
-      return;
-    }
-    if (!sowSubject || !subjectCatalog.some(s=>s.key===sowSubject)) sowSubject = subjectCatalog[0].key;
-    const week = currentWeekNo();
-    body.innerHTML = `
-      <div class="card">
-        <h2>🔍 Warbixinta Cinwaanka Casharka</h2>
-        <div style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">
-          Dooro maadada, kadibna qor cinwaanka casharka (tusaale: "Simple harmonic motion; period in SHM"). Nidaamku wuxuu ka eegayaa Scheme of Work-ka maadadan ee kujira systemka, oo kuu sheegaya toddobaadka loo qorsheeyay iyo in aad la socoto ama aad ka dib dhacsan tahay marka loo eego toddobaadka hadda socda.
-        </div>
-        <label>Maadada</label>
-        <select id="sowLookupSubject">${subjectCatalog.map(s=>`<option value="${escapeHtml(s.key)}" ${s.key===sowSubject?"selected":""}>${escapeHtml(s.title)}</option>`).join("")}</select>
-        <label>Cinwaanka Casharka</label>
-        <input type="text" id="sowLookupTitle" placeholder="tusaale: Simple harmonic motion; period in SHM">
-        <button class="btn" id="btnSowLookup">📄 Soo Saar Warbixinta</button>
-        ${week==null ? `<div class="compare-note pending" style="margin-top:14px;">⏳ Wali lama dejin taariikhda bilowga semester-ka — tag "⚙️ Dejinta Semester-ka" si loo xisaabiyo toddobaadka hadda socda.</div>` : ""}
-      </div>
-      <div id="sowLookupResult"></div>
-    `;
-    document.getElementById("sowLookupSubject").addEventListener("change",(e)=>{ sowSubject = e.target.value; });
-    const titleInput = document.getElementById("sowLookupTitle");
-    const runLookup = ()=>{
-      const subjectKey = document.getElementById("sowLookupSubject").value;
-      renderSowLookupReport(subjectKey, titleInput.value);
-    };
-    document.getElementById("btnSowLookup").addEventListener("click", runLookup);
-    titleInput.addEventListener("keydown", (e)=>{ if (e.key==="Enter") runLookup(); });
-  }
-
-  function renderSowLookupReport(subjectKey, title){
-    const out = document.getElementById("sowLookupResult");
-    const subjTitle = (subjectCatalog.find(s=>s.key===subjectKey)||{}).title || "";
-    if (!title || !title.trim()){
-      out.innerHTML = `<div class="card"><div class="empty">Fadlan qor cinwaanka casharka.</div></div>`;
-      return;
-    }
-    const matches = findSowTopicMatches(subjectKey, title);
-    if (!matches.length){
-      const allTopics = sowTopics.filter(t=>t.subject_key===subjectKey);
-      out.innerHTML = `
-        <div class="card">
-          <div class="compare-note pending">⚠️ Cinwaanka "<b>${escapeHtml(title.trim())}</b>" lagama helin Scheme of Work-ka maadada <b>${escapeHtml(subjTitle)}</b>.</div>
-          <p style="font-size:.8rem;color:var(--text-dim);margin-top:10px;">
-            ${allTopics.length
-              ? `Hubi in qoraalku la mid yahay ama u dhow yahay sida Scheme of Work-ka loogu qoray, ama tag "📤 Soo Deji Scheme" si aad u eegto liiska casharada maadadan.`
-              : `Wali Scheme of Work looma gelin maadada "${escapeHtml(subjTitle)}". Tag "📤 Soo Deji Scheme" si aad u geliso.`}
-          </p>
-        </div>`;
-      return;
-    }
-    const week = currentWeekNo();
-    // Keep only the best-scoring match per class (a subject can have more than one class).
-    const byClass = {};
-    matches.forEach(({t,score})=>{
-      const key = t.class_name;
-      if (!byClass[key] || byClass[key].score < score) byClass[key] = { t, score };
-    });
-    const rows = Object.values(byClass).sort((a,b)=>a.t.class_name.localeCompare(b.t.class_name));
-    out.innerHTML = rows.map(({t,score})=>{
-      let statusHtml;
-      if (t.done){
-        statusHtml = `<div class="compare-note ok">✅ Casharkan horeyba waa la dhammeeyay${t.week_no!=null?` (loo qorsheeyay Toddobaad ${t.week_no})`:""}.</div>`;
-      } else if (week==null){
-        statusHtml = `<div class="compare-note pending">⏳ Lama xisaabin karo xaaladda — wali lama dejin taariikhda bilowga semester-ka.</div>`;
-      } else if (t.week_no==null){
-        statusHtml = `<div class="compare-note pending">ℹ️ Casharkan toddobaad looma qorin Scheme of Work-ka, sidaa darteed lagama xisaabin karo in la dib dhacay iyo in kale.</div>`;
-      } else if (t.week_no < week){
-        const diff = week - t.week_no;
-        statusHtml = `<div class="compare-note pending">⚠️ Waad ka dib dhacsan tahay — casharkan waxaa loo qorsheeyay Toddobaad <b>${t.week_no}</b>, waxaadna haatan joogtaa Toddobaadka <b>${week}</b> (${diff} toddobaad oo dib dhac ah).</div>`;
-      } else if (t.week_no === week){
-        statusHtml = `<div class="compare-note ok">✅ Waad la socotaa jadwalka — casharkan waxaa loo qorsheeyay toddobaadkan (Toddobaad ${week}).</div>`;
-      } else {
-        const diff = t.week_no - week;
-        statusHtml = `<div class="compare-note ok">🟢 Waad ka hor martay jadwalka — casharkan waxaa loo qorsheeyay Toddobaad <b>${t.week_no}</b> (${diff} toddobaad oo mustaqbal ah), waxaadna haatan joogtaa Toddobaadka <b>${week}</b>.</div>`;
-      }
-      return `
-        <div class="card">
-          <h2>${escapeHtml(subjTitle)} — ${escapeHtml(t.class_name)}</h2>
-          <p style="font-size:.85rem;margin:0 0 6px;">
-            Cinwaanka la helay: <b>${escapeHtml(t.topic)}</b>
-            ${t.week_no!=null?` &nbsp;·&nbsp; Toddobaadka Qorshaysan: <b>${t.week_no}</b>`:""}
-            ${week!=null?` &nbsp;·&nbsp; Toddobaadka Hadda: <b>${week}</b>`:""}
-          </p>
-          ${score<80 ? `<p style="font-size:.75rem;color:var(--text-dim);">(Isku ekaanshaha qoraalka ma aha 100% — hubi in ay tahay casharka saxda ah.)</p>` : ""}
-          ${statusHtml}
-        </div>`;
-    }).join("");
   }
 
   function renderNewEval(){
@@ -1794,4 +1577,79 @@
       printBtn.style.display = "none";
     });
     evalSel.addEventListener("change", ()=>{
-      reportEvalI
+      reportEvalId = evalSel.value;
+      buildReport();
+    });
+    printBtn.addEventListener("click", ()=> window.print());
+
+    function buildReport(){
+      const area = document.getElementById("reportArea");
+      if (!reportTeacherId || !reportEvalId){ area.innerHTML=""; printBtn.style.display="none"; return; }
+      const t = teachers.find(x=>x.id===reportTeacherId);
+      const evs = teacherEvals(reportTeacherId);
+      const idx = evs.findIndex(e=>e.id===reportEvalId);
+      if (idx===-1){ area.innerHTML=""; return; }
+      const e = evs[idx];
+      const prevEval = idx>0 ? evs[idx-1] : null;
+      const m = e.meta || {};
+      const score = Number(e.score);
+
+      area.innerHTML = `
+        <div class="report-header">
+          <img src="/logo.jpg" alt="logo">
+          <div>
+            <h2 style="margin:0;">${escapeHtml(m.school||"Dugsiga Howlwadaag Sare")}</h2>
+            <div style="font-size:.85rem;color:#555;">Foomka Kormeerka iyo Qiimeynta Macallinka</div>
+          </div>
+        </div>
+        <table>
+          <tr><th>Macallinka</th><td>${escapeHtml(t.name)}</td><th>Maaddada</th><td>${escapeHtml(m.subject||t.subject||"—")}</td></tr>
+          <tr><th>Fasalka</th><td>${escapeHtml(m.class||"—")}</td><th>Taariikhda</th><td>${e.date}</td></tr>
+          <tr><th>Kormeeraha</th><td colspan="3">${escapeHtml(m.supervisorName||"—")}</td></tr>
+        </table>
+
+        <h3>Natiijada Guud: ${fmt1(score)}% — ${overallLevel(score)}</h3>
+
+        <table>
+          <thead><tr><th>#</th><th>Qodobka</th><th>Qiimeynta (1-5)</th><th>Faallo</th></tr></thead>
+          <tbody>
+            ${(e.items||[]).map((it,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(it.title.replace(/^\d+\.\s*/,''))}</td><td style="text-align:center;font-weight:700;">${it.rating}</td><td>${escapeHtml(it.comment||"—")}</td></tr>`).join("")}
+          </tbody>
+        </table>
+
+        ${(m.conclusion||m.strengths||m.improvements||m.recommendations) ? `
+        <h3>Gunaad</h3>
+        ${m.conclusion?`<p>${escapeHtml(m.conclusion)}</p>`:""}
+        ${m.strengths?`<p><b>Waxyaabaha wanaagsan:</b> ${escapeHtml(m.strengths)}</p>`:""}
+        ${m.improvements?`<p><b>U baahan horumarinta:</b> ${escapeHtml(m.improvements)}</p>`:""}
+        ${m.recommendations?`<p><b>Talooyinka Kormeeraha:</b> ${escapeHtml(m.recommendations)}</p>`:""}
+        ` : ""}
+
+        ${prevEval ? `
+        <h3>📊 Isbarbardhigga qodob-qodobka (vs ${prevEval.date})</h3>
+        ${comparisonHtmlPrint(prevEval, e)}
+        ` : `<div class="cmp-summary" style="margin-top:14px;">📌 Kani waa qiimeyntii koowaad ee macallinkan — weli lama isbarbardhigi karo qiimeymo hore.</div>`}
+      `;
+      printBtn.style.display = "inline-block";
+    }
+
+    function comparisonHtmlPrint(prevEval, currEval){
+      const cmp = compareItems(prevEval, currEval);
+      const s = comparisonSummary(cmp);
+      let summaryText;
+      if (s.up > s.down) summaryText = `Guud ahaan macallinku wuxuu sameeyay HORUMAR — ${s.up} qodob kor u kacay, ${s.down} hoos u dhacay, ${s.same} isku mid ahaaday.`;
+      else if (s.down > s.up) summaryText = `Guud ahaan macallinku wuxuu sameeyay HOOS U DHAC — ${s.down} qodob hoos u dhacay, ${s.up} kor u kacay, ${s.same} isku mid ahaaday.`;
+      else summaryText = `Isbeddel weyn lama arag — ${s.up} kor u kacay, ${s.down} hoos u dhacay, ${s.same} isku mid ahaaday.`;
+      const rows = cmp.map(c=>{
+        const note = c.status==="up" ? `Horumar (+${c.delta})` : c.status==="down" ? `Hoos u dhac (${c.delta})` : "Isku mid";
+        return `<tr><td>${escapeHtml(c.title.replace(/^\d+\.\s*/,''))}</td><td style="text-align:center;">${c.prev!==null?c.prev:"—"}</td><td style="text-align:center;">${c.curr!==null?c.curr:"—"}</td><td>${note}</td></tr>`;
+      }).join("");
+      return `<p><b>${summaryText}</b></p><table><thead><tr><th>Qodobka</th><th>Hore</th><th>Hadda</th><th>Isbeddelka</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

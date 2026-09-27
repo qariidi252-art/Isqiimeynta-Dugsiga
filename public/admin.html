@@ -135,6 +135,16 @@
       box.textContent = '⚠️ JS ERROR: ' + e.message + '\nLine: ' + e.lineno + ', Col: ' + e.colno + '\nFile: ' + (e.filename||'inline');
     }
   });
+  // Errors inside async/await code (failed fetch, rejected promise) don't fire the
+  // 'error' event above — this catches those too, so a blank page always shows why.
+  window.addEventListener('unhandledrejection', function(e){
+    var box = document.getElementById('jsErrorBox');
+    if (box) {
+      box.style.display = 'block';
+      var reason = e.reason && e.reason.message ? e.reason.message : String(e.reason);
+      box.textContent = '⚠️ PROMISE ERROR: ' + reason;
+    }
+  });
 </script>
 <header>
   <img class="logo" src="/logo.jpg" alt="Dugsiga Howlwadaag Sare">
@@ -225,10 +235,28 @@
 
   function getPw(){ return localStorage.getItem(PW_KEY) || ""; }
 
+  // Plain fetch() never times out on a bad connection — it just hangs forever, which
+  // is what made the page look permanently blank/stuck. This aborts after 12s and
+  // throws a clear error instead, so the person always sees a message and a retry.
+  async function fetchWithTimeout(path, opts, ms){
+    ms = ms || 12000;
+    const controller = new AbortController();
+    const timer = setTimeout(()=>controller.abort(), ms);
+    try {
+      opts = Object.assign({}, opts || {}, { signal: controller.signal });
+      return await fetch(path, opts);
+    } catch(e){
+      if (e.name === "AbortError") throw new Error("Khalad xidhiidh (timeout) — internetka ayaa daciifsan ama server-ku wuu raagay.");
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async function api(path, opts){
     opts = opts || {};
     opts.headers = Object.assign({ "Content-Type":"application/json", "x-admin-password": getPw() }, opts.headers||{});
-    const res = await fetch(path, opts);
+    const res = await fetchWithTimeout(path, opts);
     if (res.status === 401){ showLogin("Sirta waa qalad, fadlan isku day mar kale."); throw new Error("unauthorized"); }
     if (!res.ok){ const j = await res.json().catch(()=>({})); throw new Error(j.error||"server error"); }
     return res.status === 204 ? null : res.json();
@@ -246,12 +274,14 @@
 
   document.getElementById("loginBtn").addEventListener("click", async ()=>{
     const pw = document.getElementById("pwInput").value;
+    const btn = document.getElementById("loginBtn"); btn.disabled = true; btn.textContent = "Sugaya...";
     try {
-      const res = await fetch("/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password: pw}) });
+      const res = await fetchWithTimeout("/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password: pw}) });
       const j = await res.json();
       if (j.ok){ localStorage.setItem(PW_KEY, pw); showApp(); loadAll(); }
       else document.getElementById("loginErr").textContent = "Sirta waa qalad.";
-    } catch(e){ document.getElementById("loginErr").textContent = "Khalad server ah."; }
+    } catch(e){ document.getElementById("loginErr").textContent = "Khalad server ah: " + e.message; }
+    finally { btn.disabled = false; btn.textContent = "Gal"; }
   });
   document.getElementById("pwInput").addEventListener("keydown", e=>{ if (e.key==="Enter") document.getElementById("loginBtn").click(); });
 
@@ -275,7 +305,12 @@
       sowTopics = await api("/api/sow/topics");
       sowSettings = await api("/api/sow/settings");
       render();
-    } catch(e){ console.error(e); }
+    } catch(e) {
+      console.error(e);
+      if (app) app.innerHTML = `<div class="card"><div class="empty">⚠️ Khalad ayaa dhacay markii xogta la soo dejinayay: ${escapeHtml(e.message||"")}</div><button class="btn" id="retryLoadBtn" style="display:block;margin:12px auto 0;">🔄 Isku day mar kale</button></div>`;
+      const retryBtn = document.getElementById("retryLoadBtn");
+      if (retryBtn) retryBtn.addEventListener("click", loadAll);
+    }
   }
 
   function logout(){
@@ -291,10 +326,10 @@
     const pw = getPw();
     if (!pw){ showLogin(); return; }
     try {
-      const res = await fetch("/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password: pw}) });
+      const res = await fetchWithTimeout("/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password: pw}) });
       const j = await res.json();
       if (j.ok){ showApp(); loadAll(); } else showLogin();
-    } catch(e){ showLogin("Khalad xidhiidh server ah."); }
+    } catch(e){ showLogin("Khalad xidhiidh server ah — fadlan hubi internetka oo isku day mar kale. (" + e.message + ")"); }
   }
 
   function fmt1(n){ return (Math.round(n*10)/10).toFixed(1); }
@@ -1704,36 +1739,4 @@
     }
 
     // ---- Scheme of Work hint: the supervisor types the topic seen written on the
-    // board, and the system automatically works out whether it matches what the
-    // Scheme of Work says should be taught this week — on track, behind, or ahead —
-    // with guidance for the teacher, no manual yes/no judgement needed.
-    function renderSowHint(){
-      const box = document.getElementById("sowHintBox");
-      if (!box) return;
-      const prevBoardText = box.dataset.boardTopic || "";
-      box.dataset.expectedTopic = ""; box.dataset.expectedWeek = ""; box.dataset.boardTopic = "";
-      box.dataset.matchedTopic = ""; box.dataset.matchedWeek = ""; box.dataset.sowStatus = ""; box.dataset.sowDiff = ""; box.dataset.sowAdvice = "";
-      const key = subjectSel.value;
-      const className = classInput.value.trim();
-      if (!key || key === "__other__" || !className){
-        box.innerHTML = `<div class="sow-hint muted">📘 Dooro maadada (liiska rasmiga ah) iyo geli fasalka si aad u geliso cinwaanka sabuuradda oo nidaamku si otomaatig ah u eego xagta uu ka joogo Scheme of Work-ka.</div>`;
-        return;
-      }
-      if (!subjectCatalog.some(s=>s.key===key)){
-        box.innerHTML = "";
-        return;
-      }
-      if (!sowSettings.term_start_date){
-        box.innerHTML = `<div class="sow-hint warn">⚠️ Taariikhda bilowga semester-ka wali lama dejin. Tag tab-ka 📘 Scheme of Work → ⚙️ Dejinta Semester-ka.</div>`;
-        return;
-      }
-      const topics = sowTopicsFor(key, className);
-      if (!topics.length){
-        box.innerHTML = `<div class="sow-hint warn">⚠️ Wali lama gelin Scheme of Work-ka maadadan/fasalkan. Tag tab-ka 📘 Scheme of Work → 📤 Soo Deji Scheme.</div>`;
-        return;
-      }
-      const subjTitle = (subjectCatalog.find(s=>s.key===key)||{}).title || "";
-      const wk = weekNoForDate(dateInput.value || today);
-      const expected = sowExpectedTopic(topics, wk);
-      box.dataset.expectedTopic = expected ? expected.topic : "";
-      box.dataset.expectedWeek = expected && expected.week_no!=null ? String(expected.we
+    // board, and the system auto

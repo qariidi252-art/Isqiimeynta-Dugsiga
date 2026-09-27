@@ -90,7 +90,21 @@
   .cmp-up { color:var(--good); } .cmp-down { color:var(--bad); } .cmp-same { color:var(--text-dim); }
   .cmp-summary { font-size:.82rem; padding:10px 12px; border-radius:10px; margin-bottom:8px; background:var(--surface-2); }
 
+  .subview-tabs { display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; }
+  .subview-tabs button { flex:1 1 auto; border:1px solid var(--border); background:var(--surface-2); color:var(--text); padding:9px 10px; border-radius:10px; font-size:.82rem; font-weight:700; cursor:pointer; }
+  .subview-tabs button.active { background:var(--navy); border-color:var(--navy); color:#fff; }
+  .subj-chip { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); padding:9px 12px; border-radius:10px; font-size:.82rem; font-weight:600; cursor:pointer; margin:0 6px 8px 0; }
+  .subj-chip.sel { background:var(--good); border-color:var(--good); color:#fff; }
+  .subj-grid { display:flex; flex-wrap:wrap; }
+  .student-row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:12px 4px; border-bottom:1px solid var(--border); cursor:pointer; }
+  .student-row:last-child { border-bottom:none; }
+  .student-row .name { font-weight:700; }
+  .student-row .sub { font-size:.78rem; color:var(--text-dim); }
   #reportArea { background:#fff; color:#111; border-radius:14px; padding:20px; box-shadow:var(--shadow); }
+  #reportArea table.subj-table th, #reportArea table.subj-table td { text-align:center; font-size:.72rem; padding:4px 5px; }
+  #reportArea table.subj-table td.namecell, #reportArea table.subj-table th.namecell { text-align:left; }
+  #reportArea .yes { color:#1e8e5a; font-weight:800; }
+  #reportArea .no { color:#c0392b; font-weight:800; }
   #reportArea h2, #reportArea h3 { color:#0d1b5e; }
   #reportArea table { width:100%; border-collapse:collapse; font-size:.82rem; margin-top:8px; }
   #reportArea th, #reportArea td { border:1px solid #ccc; padding:6px 8px; text-align:left; }
@@ -139,6 +153,7 @@
   <nav class="tabs">
     <button data-tab="dashboard" class="active">Guddiga Guud</button>
     <button data-tab="teachers">Macallimiinta</button>
+    <button data-tab="students">Ardayda</button>
     <button data-tab="newEval">Qiimeyn Cusub</button>
     <button data-tab="reports">Warbixin</button>
     <button id="logoutBtn" style="background:transparent;border:1px solid var(--bad);color:var(--bad);">⏻ Ka Bax</button>
@@ -147,6 +162,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function(){
   "use strict";
@@ -166,13 +182,39 @@
   ];
   const TOTAL_ITEMS = CRITERIA.length;
 
+  // ---------- Form 4 subjects (fixed list, must match server.js) ----------
+  const STUDENT_SUBJECTS = [
+    { key:"mathematics", title:"Mathematics" },
+    { key:"physics", title:"Physics" },
+    { key:"chemistry", title:"Chemistry" },
+    { key:"biology", title:"Biology" },
+    { key:"english", title:"English" },
+    { key:"af_soomaali", title:"Af-Soomaali" },
+    { key:"arabic", title:"Arabic" },
+    { key:"history", title:"History" },
+    { key:"geography", title:"Geography" },
+    { key:"business_studies", title:"Business Studies" },
+    { key:"tarbiyo", title:"Tarbiyo" },
+    { key:"ict", title:"ICT" }
+  ];
+
   let teachers = [];
   let evaluations = [];
+  let students = [];
   let currentTeacherId = null;
   let activeTab = "dashboard";
   let preselectTeacher = null;
   let chartInstance = null;
   let evalState = {};
+
+  // ---------- Students tab state ----------
+  let studentView = "assign"; // assign | report | manage
+  let assignClass = null;
+  let assignSection = null;
+  let assignStudentId = null;
+  let assignSelected = [];
+  let reportClass = null;
+  let reportSection = "__ALL__";
 
   const app = document.getElementById("app");
   const PW_KEY = "qm_admin_pw";
@@ -223,13 +265,14 @@
     try {
       teachers = await api("/api/teachers");
       evaluations = await api("/api/evaluations");
+      students = await api("/api/students");
       render();
     } catch(e){ console.error(e); }
   }
 
   function logout(){
     localStorage.removeItem(PW_KEY);
-    teachers = []; evaluations = []; currentTeacherId = null; activeTab = "dashboard";
+    teachers = []; evaluations = []; students = []; currentTeacherId = null; activeTab = "dashboard";
     document.querySelectorAll("nav.tabs button[data-tab]").forEach(b=>b.classList.remove("active"));
     document.querySelector('nav.tabs button[data-tab="dashboard"]').classList.add("active");
     showLogin();
@@ -313,9 +356,122 @@
   }
   async function deleteEvaluation(id){ await api("/api/evaluations/"+id, { method:"DELETE" }); await loadAll(); }
 
+  async function addStudent(s){ await api("/api/students", { method:"POST", body: JSON.stringify(s) }); await loadAll(); }
+  async function addStudentsBulk(rows){ const r = await api("/api/students/bulk", { method:"POST", body: JSON.stringify({rows}) }); await loadAll(); return r; }
+  async function updateStudentSubjects(id, subjects){ await api("/api/students/"+id+"/subjects", { method:"PUT", body: JSON.stringify({subjects}) }); await loadAll(); }
+  async function deleteStudent(id){ await api("/api/students/"+id, { method:"DELETE" }); if (assignStudentId===id) assignStudentId=null; await loadAll(); }
+
+  function studentClasses(){ return Array.from(new Set(students.map(s=>s.class_name).filter(Boolean))).sort(); }
+  function studentSections(className){ return Array.from(new Set(students.filter(s=>s.class_name===className).map(s=>s.section).filter(s=>s!=="" && s!=null))).sort(); }
+  function parseStudentRows(raw){
+    const lines = raw.split("\n").map(l=>l.replace(/\r$/,"")).filter(l=>l.trim());
+    const rows = [];
+    for (const line of lines){
+      if (/adm\s*no/i.test(line) && /(name|class)/i.test(line)) continue; // skip header row
+      let cols = line.split("\t");
+      if (cols.length < 5) cols = line.split(",");
+      cols = cols.map(c=>c.trim());
+      if (cols.length >= 6 && /^\d+$/.test(cols[0])) cols = cols.slice(1); // drop leading "#" column
+      if (cols.length < 5) continue;
+      const [admNo, name, gender, phone, classSec] = cols;
+      if (!name) continue;
+      const m = String(classSec||"").match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+      let className, section;
+      if (m){ className = m[1].trim(); section = m[2].trim(); }
+      else { className = String(classSec||"").trim(); section = ""; }
+      if (!className) continue;
+      rows.push({ admNo: admNo||"", name, gender: gender||"", phone: phone||"", className, section });
+    }
+    return rows;
+  }
+
+  function splitClassSection(classSec){
+    const m = String(classSec||"").match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+    if (m) return { className: m[1].trim(), section: m[2].trim() };
+    return { className: String(classSec||"").trim(), section: "" };
+  }
+
+  function detectHeaderMap(row){
+    if (!row) return null;
+    const norm = row.map(c=>String(c==null?"":c).toLowerCase().trim());
+    const find = (fragments)=>norm.findIndex(c=>fragments.some(f=>c.includes(f)));
+    const nameIdx = find(["student name","name"]);
+    const classIdx = find(["class"]);
+    if (nameIdx===-1 || classIdx===-1) return null;
+    const admIdx = find(["adm"]);
+    const genderIdx = find(["gender","sex"]);
+    const phoneIdx = find(["phone"]);
+    return {
+      admNo: admIdx===-1 ? null : admIdx,
+      name: nameIdx,
+      gender: genderIdx===-1 ? null : genderIdx,
+      phone: phoneIdx===-1 ? null : phoneIdx,
+      classSec: classIdx
+    };
+  }
+
+  function rowsFromSheetAoa(aoa){
+    if (!aoa || !aoa.length) return [];
+    let headerIdx = -1, headerMap = null;
+    for (let i=0; i<Math.min(aoa.length,5); i++){
+      const map = detectHeaderMap(aoa[i]);
+      if (map){ headerIdx = i; headerMap = map; break; }
+    }
+    if (!headerMap) return [];
+    const rows = [];
+    for (let i=headerIdx+1; i<aoa.length; i++){
+      const r = aoa[i];
+      if (!r || !r.length) continue;
+      const name = String(r[headerMap.name]==null?"":r[headerMap.name]).trim();
+      if (!name) continue;
+      const classSecRaw = String(r[headerMap.classSec]==null?"":r[headerMap.classSec]).trim();
+      if (!classSecRaw) continue;
+      const { className, section } = splitClassSection(classSecRaw);
+      if (!className) continue;
+      rows.push({
+        admNo: headerMap.admNo!=null ? String(r[headerMap.admNo]==null?"":r[headerMap.admNo]).trim() : "",
+        name,
+        gender: headerMap.gender!=null ? String(r[headerMap.gender]==null?"":r[headerMap.gender]).trim() : "",
+        phone: headerMap.phone!=null ? String(r[headerMap.phone]==null?"":r[headerMap.phone]).trim() : "",
+        className,
+        section
+      });
+    }
+    return rows;
+  }
+
+  function extractStudentRowsFromFile(file){
+    return new Promise((resolve, reject)=>{
+      const name = (file.name||"").toLowerCase();
+      const isCsv = name.endsWith(".csv") || file.type==="text/csv";
+      const reader = new FileReader();
+      reader.onerror = ()=>reject(new Error("Ma suurtageli in la akhriyo file-ka."));
+      if (isCsv){
+        reader.onload = ()=>{
+          try { resolve(parseStudentRows(String(reader.result||""))); }
+          catch(e){ reject(e); }
+        };
+        reader.readAsText(file);
+      } else {
+        reader.onload = ()=>{
+          try {
+            if (!window.XLSX) throw new Error("Maktabadda XLSX lama soo shubin, isku day mar kale (hubi internet-ka).");
+            const data = new Uint8Array(reader.result);
+            const wb = XLSX.read(data, {type:"array"});
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const aoa = XLSX.utils.sheet_to_json(ws, {header:1, raw:false, defval:""});
+            resolve(rowsFromSheetAoa(aoa));
+          } catch(e){ reject(e); }
+        };
+        reader.readAsArrayBuffer(file);
+      }
+    });
+  }
+
   function render(){
     if (activeTab==="dashboard") return renderDashboard();
     if (activeTab==="teachers") return currentTeacherId ? renderTeacherDetail(currentTeacherId) : renderTeachers();
+    if (activeTab==="students") return renderStudents();
     if (activeTab==="newEval") return renderNewEval();
     if (activeTab==="reports") return renderReports();
   }
@@ -518,6 +674,278 @@
           plugins:{ legend:{labels:{color:textColor,boxWidth:10,font:{size:10}}} } }
       });
     }
+  }
+
+  // ---------- Students tab ----------
+  function renderStudents(){
+    app.innerHTML = `
+      <div class="subview-tabs no-print">
+        <button data-sv="assign" class="${studentView==="assign"?"active":""}">📚 Qeybinta Maadooyinka</button>
+        <button data-sv="report" class="${studentView==="report"?"active":""}">🖨️ Warbixinta Fasalka</button>
+        <button data-sv="manage" class="${studentView==="manage"?"active":""}">➕ Ku Dar / Maarayn Ardayda</button>
+      </div>
+      <div id="studentBody"></div>
+    `;
+    app.querySelectorAll("[data-sv]").forEach(b=>{
+      b.addEventListener("click", ()=>{ studentView = b.dataset.sv; render(); });
+    });
+    const body = document.getElementById("studentBody");
+    if (studentView==="assign") renderAssignSubjects(body);
+    else if (studentView==="report") renderClassReport(body);
+    else renderManageStudents(body);
+  }
+
+  function renderAssignSubjects(body){
+    const classes = studentClasses();
+    if (!classes.length){
+      body.innerHTML = `<div class="card"><div class="empty">Wali arday lama gelin. Tag "➕ Ku Dar / Maarayn Ardayda" si aad ardayda ugu darto.</div></div>`;
+      return;
+    }
+    if (!assignClass || !classes.includes(assignClass)) assignClass = classes[0];
+    const sections = studentSections(assignClass);
+    if (assignSection===null || !sections.includes(assignSection)) assignSection = sections[0] || "";
+    const list = students.filter(s=>s.class_name===assignClass && (s.section||"")===(assignSection||""));
+
+    body.innerHTML = `
+      <div class="card">
+        <h2>Dooro Fasalka iyo Qaybta</h2>
+        <label>Fasalka</label>
+        <select id="assignClassSel">${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===assignClass?"selected":""}>${escapeHtml(c)}</option>`).join("")}</select>
+        <label>Qaybta (Section)</label>
+        <select id="assignSectionSel">${sections.map(s=>`<option value="${escapeHtml(s)}" ${s===assignSection?"selected":""}>${escapeHtml(s)}</option>`).join("")}</select>
+      </div>
+      <div class="card">
+        <h2>Ardayda ${escapeHtml(assignClass)}${assignSection?` (${escapeHtml(assignSection)})`:""} — ${list.length}</h2>
+        ${list.length===0 ? `<div class="empty">Qaybtan arday kuma jiraan.</div>` :
+        list.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(s=>{
+          const held = (s.subjects||[]).length;
+          return `<div class="student-row" data-open="${s.id}">
+            <div><div class="name">${escapeHtml(s.name)}</div><div class="sub">${escapeHtml(s.adm_no||"")}</div></div>
+            <span class="badge ${held===12?'good':held===0?'bad':'warn'}">${held}/12 maado</span>
+          </div>`;
+        }).join("")}
+      </div>
+      <div id="subjectPanel"></div>
+    `;
+    document.getElementById("assignClassSel").addEventListener("change", (e)=>{ assignClass=e.target.value; assignSection=null; assignStudentId=null; render(); });
+    document.getElementById("assignSectionSel").addEventListener("change", (e)=>{ assignSection=e.target.value; assignStudentId=null; render(); });
+    body.querySelectorAll("[data-open]").forEach(el=>{
+      el.addEventListener("click", ()=>{
+        assignStudentId = el.dataset.open;
+        const st = students.find(x=>x.id===assignStudentId);
+        assignSelected = st ? (st.subjects||[]).slice() : [];
+        renderSubjectPanel();
+      });
+    });
+    if (assignStudentId && list.some(s=>s.id===assignStudentId)) renderSubjectPanel();
+
+    function renderSubjectPanel(){
+      const st = students.find(x=>x.id===assignStudentId);
+      const panel = document.getElementById("subjectPanel");
+      if (!st){ panel.innerHTML=""; return; }
+      panel.innerHTML = `
+        <div class="card">
+          <h2>Maadooyinka — ${escapeHtml(st.name)}</h2>
+          <div class="subj-grid">
+            ${STUDENT_SUBJECTS.map(sub=>`<button class="subj-chip ${assignSelected.includes(sub.key)?'sel':''}" data-subj="${sub.key}">${assignSelected.includes(sub.key)?'✓ ':''}${escapeHtml(sub.title)}</button>`).join("")}
+          </div>
+          <button class="btn" id="btnSaveSubjects">💾 Kaydi Maadooyinka</button>
+          <button class="btn secondary" id="btnAllSubjects">☑️ Dooro Dhammaan</button>
+          <button class="btn secondary" id="btnNoneSubjects">☐ Ka Saar Dhammaan</button>
+        </div>
+      `;
+      panel.querySelectorAll("[data-subj]").forEach(b=>{
+        b.addEventListener("click", ()=>{
+          const key = b.dataset.subj;
+          if (assignSelected.includes(key)) assignSelected = assignSelected.filter(k=>k!==key);
+          else assignSelected.push(key);
+          renderSubjectPanel();
+        });
+      });
+      document.getElementById("btnAllSubjects").addEventListener("click", ()=>{ assignSelected = STUDENT_SUBJECTS.map(s=>s.key); renderSubjectPanel(); });
+      document.getElementById("btnNoneSubjects").addEventListener("click", ()=>{ assignSelected = []; renderSubjectPanel(); });
+      document.getElementById("btnSaveSubjects").addEventListener("click", async ()=>{
+        const btn = document.getElementById("btnSaveSubjects"); btn.disabled=true; btn.textContent="Kaydinaya...";
+        try { await updateStudentSubjects(st.id, assignSelected); }
+        finally { btn.disabled=false; btn.textContent="💾 Kaydi Maadooyinka"; }
+      });
+    }
+  }
+
+  function renderClassReport(body){
+    const classes = studentClasses();
+    if (!classes.length){
+      body.innerHTML = `<div class="card"><div class="empty">Wali arday lama gelin.</div></div>`;
+      return;
+    }
+    if (!reportClass || !classes.includes(reportClass)) reportClass = classes[0];
+    const sections = studentSections(reportClass);
+    if (reportSection !== "__ALL__" && !sections.includes(reportSection)) reportSection = "__ALL__";
+
+    body.innerHTML = `
+      <div class="card no-print">
+        <h2>Warbixinta Maadooyinka — Dooro Fasalka</h2>
+        <label>Fasalka</label>
+        <select id="repClassSel">${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===reportClass?"selected":""}>${escapeHtml(c)}</option>`).join("")}</select>
+        <label>Qaybta</label>
+        <select id="repSectionSel">
+          <option value="__ALL__" ${reportSection==="__ALL__"?"selected":""}>Dhammaan Qaybaha</option>
+          ${sections.map(s=>`<option value="${escapeHtml(s)}" ${s===reportSection?"selected":""}>${escapeHtml(s)}</option>`).join("")}
+        </select>
+        <button class="btn gold" id="printReportBtn">🖨️ Daabac Warbixinta</button>
+      </div>
+      <div id="reportArea"></div>
+    `;
+    document.getElementById("repClassSel").addEventListener("change", (e)=>{ reportClass=e.target.value; reportSection="__ALL__"; render(); });
+    document.getElementById("repSectionSel").addEventListener("change", (e)=>{ reportSection=e.target.value; render(); });
+    document.getElementById("printReportBtn").addEventListener("click", ()=>window.print());
+
+    const list = students.filter(s=>s.class_name===reportClass && (reportSection==="__ALL__" || (s.section||"")===reportSection))
+      .slice().sort((a,b)=>(a.section||"").localeCompare(b.section||"") || a.name.localeCompare(b.name));
+
+    const area = document.getElementById("reportArea");
+    if (!list.length){ area.innerHTML = `<div class="empty">Qaybtan arday kuma jiraan.</div>`; return; }
+
+    const rows = list.map((s,i)=>{
+      const held = s.subjects||[];
+      const missing = STUDENT_SUBJECTS.filter(sub=>!held.includes(sub.key)).map(sub=>sub.title);
+      const cells = STUDENT_SUBJECTS.map(sub=>`<td>${held.includes(sub.key)?'<span class="yes">✓</span>':'<span class="no">✗</span>'}</td>`).join("");
+      return `<tr>
+        <td>${i+1}</td>
+        <td class="namecell">${escapeHtml(s.adm_no||"")}</td>
+        <td class="namecell">${escapeHtml(s.name)}${reportSection==="__ALL__" && s.section?` <span style="color:#888;">(${escapeHtml(s.section)})</span>`:""}</td>
+        ${cells}
+        <td class="namecell" style="max-width:180px;">${missing.length ? escapeHtml(missing.join(", ")) : "—"}</td>
+      </tr>`;
+    }).join("");
+
+    const totalHeld = list.reduce((a,s)=>a+((s.subjects||[]).length),0);
+    const avg = (totalHeld/list.length).toFixed(1);
+    const complete = list.filter(s=>(s.subjects||[]).length===12).length;
+
+    area.innerHTML = `
+      <div class="report-header">
+        <img src="/logo.jpg" alt="logo">
+        <div>
+          <h2 style="margin:0;">Dugsiga Howlwadaag Sare</h2>
+          <div style="font-size:.85rem;color:#555;">Warbixinta Maadooyinka Ardayda — ${escapeHtml(reportClass)}${reportSection!=="__ALL__"?` (${escapeHtml(reportSection)})`:""}</div>
+        </div>
+      </div>
+      <p style="font-size:.85rem;">Wadarta ardayda: <b>${list.length}</b> · Celceliska maadooyinka qofkiiba: <b>${avg}</b> · Ku dhammaystiray 12-da maado: <b>${complete}</b></p>
+      <div style="overflow-x:auto;">
+      <table class="subj-table">
+        <thead><tr>
+          <th>#</th><th class="namecell">Adm No</th><th class="namecell">Magaca</th>
+          ${STUDENT_SUBJECTS.map(sub=>`<th title="${escapeHtml(sub.title)}">${escapeHtml(sub.title.slice(0,3))}</th>`).join("")}
+          <th class="namecell">Maadooyinka Kamaqan</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      </div>
+    `;
+  }
+
+  function renderManageStudents(body){
+    const classes = studentClasses();
+    body.innerHTML = `
+      <div class="card">
+        <h2>Ku Dar Arday Kaliya</h2>
+        <label>Nambarka Diiwaanka (Adm No)</label>
+        <input type="text" id="newStAdm" placeholder="tusaale: ADM11173">
+        <label>Magaca Ardayga</label>
+        <input type="text" id="newStName" placeholder="Magaca oo dhammaystiran">
+        <label>Jinsiga</label>
+        <select id="newStGender"><option value="">—</option><option value="Male">Male</option><option value="Female">Female</option></select>
+        <label>Telefoonka</label>
+        <input type="text" id="newStPhone" placeholder="tusaale: 615...">
+        <label>Fasalka</label>
+        <input type="text" id="newStClass" placeholder="tusaale: Form 4" value="${classes[0]?escapeHtml(classes[0]):''}">
+        <label>Qaybta (Section)</label>
+        <input type="text" id="newStSection" placeholder="tusaale: A">
+        <button class="btn" id="btnAddStudent">➕ Ku Dar Ardayga</button>
+      </div>
+      <div class="card">
+        <h2>📤 Soo Deji Warbixinta Ardayda (Excel/CSV)</h2>
+        <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">
+          Dooro file-ka "Student Class List Report" (.xlsx ama .csv) — ardayda iyo Fasalka/Qaybtoodu (tusaale "Form 4 (A)") si otomaatig ah ayaa loo geli doonaa.
+        </div>
+        <input type="file" id="studentFileInput" accept=".xlsx,.xls,.csv">
+        <div id="fileUploadResult" style="font-size:.8rem;color:var(--text-dim);margin-top:8px;"></div>
+      </div>
+      <div class="card">
+        <h2>Ku Dar Dhowr Arday Mar Hal Ah (ka koobi qoraal)</h2>
+        <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:6px;">
+          Haddii aadan file-ka soo dejin, waxaad halkan ku dheji kartaa safafka Adm No, Magaca, Gender, Phone, Fasalka(Qaybta) — tusaale "Form 4 (A)" — hal arday xariiq walba.
+        </div>
+        <textarea id="bulkStudents" style="min-height:160px;" placeholder="ADM11173	Abdiaziz Mohamud Hassan Sanbul	Male	618618982	Form 4 (A)"></textarea>
+        <button class="btn secondary" id="btnBulkStudents">📋 Ku Dar Dhammaan</button>
+        <div id="bulkStResult" style="font-size:.8rem;color:var(--text-dim);margin-top:6px;"></div>
+      </div>
+      <div class="card">
+        <h2>Dhammaan Ardayda (${students.length})</h2>
+        ${students.length===0 ? `<div class="empty">Wali arday lama gelin.</div>` :
+        classes.map(c=>{
+          const secs = studentSections(c);
+          const groups = secs.length ? secs : [""];
+          return groups.map(sec=>{
+            const list = students.filter(s=>s.class_name===c && (s.section||"")===sec).slice().sort((a,b)=>a.name.localeCompare(b.name));
+            if (!list.length) return "";
+            return `<div style="margin-bottom:10px;"><div style="font-weight:700;font-size:.85rem;margin:8px 0 4px;">${escapeHtml(c)}${sec?` (${escapeHtml(sec)})`:""} — ${list.length}</div>
+              ${list.map(s=>`<div class="student-row" style="cursor:default;">
+                <div><div class="name">${escapeHtml(s.name)}</div><div class="sub">${escapeHtml(s.adm_no||"")} · ${(s.subjects||[]).length}/12 maado</div></div>
+                <button class="del-x" data-delst="${s.id}" title="Tirtir">✕</button>
+              </div>`).join("")}
+            </div>`;
+          }).join("");
+        }).join("")}
+      </div>
+    `;
+    document.getElementById("studentFileInput").addEventListener("change", async (e)=>{
+      const file = e.target.files[0];
+      if (!file) return;
+      const setMsg = (msg)=>{ const d = document.getElementById("fileUploadResult"); if (d) d.textContent = msg; };
+      setMsg("⏳ Akhrinaya file-ka...");
+      try {
+        const rows = await extractStudentRowsFromFile(file);
+        if (!rows.length){ setMsg("⚠️ Wax arday ah lagama helin file-kan. Hubi in uu leeyahay tiirarka Adm No, Student Name, Class (Sec)."); return; }
+        setMsg(`⏳ Waa la helay ${rows.length} arday, geliyaa...`);
+        const r = await addStudentsBulk(rows);
+        setMsg(`✅ ${r.created} arday ayaa si otomaatig ah loo geliyay ${escapeHtml(file.name)}.`);
+      } catch(err){
+        setMsg("⚠️ Khalad: " + (err && err.message ? err.message : "wax lama akhriyi karin file-ka."));
+      }
+    });
+    document.getElementById("btnAddStudent").addEventListener("click", async ()=>{
+      const s = {
+        admNo: document.getElementById("newStAdm").value,
+        name: document.getElementById("newStName").value,
+        gender: document.getElementById("newStGender").value,
+        phone: document.getElementById("newStPhone").value,
+        className: document.getElementById("newStClass").value,
+        section: document.getElementById("newStSection").value,
+      };
+      if (!s.name.trim()){ alert("Fadlan geli magaca ardayga."); return; }
+      if (!s.className.trim()){ alert("Fadlan geli fasalka."); return; }
+      const btn = document.getElementById("btnAddStudent"); btn.disabled=true;
+      try { await addStudent(s); } finally { btn.disabled=false; }
+    });
+    document.getElementById("btnBulkStudents").addEventListener("click", async ()=>{
+      const raw = document.getElementById("bulkStudents").value;
+      const rows = parseStudentRows(raw);
+      if (!rows.length){ alert("Wax xog ah lama helin. Hubi qaabka."); return; }
+      const btn = document.getElementById("btnBulkStudents"); btn.disabled=true; btn.textContent="Gelinaya...";
+      try {
+        const r = await addStudentsBulk(rows);
+        const resDiv = document.getElementById("bulkStResult");
+        if (resDiv) resDiv.textContent = `✅ ${r.created} arday ayaa la geliyay.`;
+      } finally { btn.disabled=false; btn.textContent="📋 Ku Dar Dhammaan"; }
+    });
+    body.querySelectorAll("[data-delst]").forEach(el=>{
+      el.addEventListener("click", async ()=>{
+        const s = students.find(x=>x.id===el.dataset.delst);
+        if (confirm(`Ma hubtaa inaad tirtirto ${s?s.name:"ardaygan"}?`)) await deleteStudent(el.dataset.delst);
+      });
+    });
   }
 
   function renderNewEval(){

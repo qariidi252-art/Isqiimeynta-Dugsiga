@@ -133,13 +133,43 @@
         return;
       }
       const data = await res.json();
-      render(data.teacher, data.evaluations);
+      render(data.teacher, data.evaluations, data.sowObservations || []);
     } catch(e){
       app.innerHTML = `<div class="card"><div class="empty">⚠️ Khalad ayaa dhacay. Isku day mar kale.</div></div>`;
     }
   }
 
-  function render(teacher, evs){
+  function sowAdviceHtml(list){
+    if (!list || !list.length) return "";
+    const icon = { ok:"✅", warn:"⚠️", tip:"💡", sum:"📖" };
+    return list.map(a=>`<div class="qrow" style="${a.k==="warn"?"color:var(--bad);":a.k==="ok"?"color:var(--good);":""}">${icon[a.k]||"•"} ${escapeHtml(a.t)}</div>`).join("");
+  }
+  function sowCardHtml(sow){
+    if (!sow || !sow.length) return "";
+    const l = sow[0];
+    const d = l.detail || {};
+    const subj = l.subject_title || l.subject_key;
+    return `<div class="card">
+      <h2>📘 Scheme of Work — Halka Aad Joogto</h2>
+      <div class="sub">Kormeerkii ugu dambeeyay: ${new Date(l.observed_at).toLocaleDateString()} · ${escapeHtml(subj)} · ${escapeHtml(l.class_name)}${l.section?" ("+escapeHtml(l.section)+")":""}</div>
+      <span class="badge ${d.cls||"neutral"}">${escapeHtml(d.label||"")}</span>
+      <div class="meta-block">
+        <b>Cinwaanka sabuuradda ku qoran:</b>${escapeHtml(l.board_text)}
+        ${l.matched_topic?`<b>Casharka Scheme-ka:</b>${escapeHtml(l.matched_topic)}`:""}
+        <b>Toddobaadka:</b>Scheme-ka ${l.planned_week!=null?l.planned_week:"—"} · Hadda ${l.current_week!=null?l.current_week:"—"}
+        ${d.positionPct!=null&&d.expectedPct!=null?`<b>Horumarka Scheme-ka:</b>Halka aad joogto ${d.positionPct}% · la rabay ilaa hadda ${d.expectedPct}%`:""}
+      </div>
+      <details open>
+        <summary>Faahfaahin iyo talooyin</summary>
+        ${sowAdviceHtml(l.advice)}
+      </details>
+      ${sow.length>1?`<details><summary>Kormeerradii hore (${sow.length-1})</summary>
+        ${sow.slice(1).map(o=>{ const od=o.detail||{}; return `<div class="cmp-row"><div class="cmp-title">${new Date(o.observed_at).toLocaleDateString()} · ${escapeHtml(o.subject_title||o.subject_key)} — ${escapeHtml(o.board_text)}</div><div class="cmp-vals"><span class="badge ${od.cls||"neutral"}">${escapeHtml(od.label||"")}</span></div></div>`; }).join("")}
+      </details>`:""}
+    </div>`;
+  }
+
+  function render(teacher, evs, sow){
     evs = evs.slice().sort((a,b)=>new Date(a.date)-new Date(b.date));
     const overall = evs.length ? evs.reduce((a,e)=>a+Number(e.score),0)/evs.length : null;
     const latest = evs.length ? Number(evs[evs.length-1].score) : null;
@@ -160,6 +190,8 @@
       </div>` : ""}
 
       ${evs.length>=2 ? `<div class="card"><h2>Horumarkaaga</h2><div class="chart-wrap"><canvas id="chart"></canvas></div></div>` : ""}
+
+      ${sowCardHtml(sow)}
 
       <div class="card">
         <h2>Taariikhda Qiimeymaha</h2>

@@ -208,15 +208,11 @@
   // ---------- Scheme of Work state ----------
   let sowTopics = [];
   let sowSettings = {};
-  let sowView = "observe"; // observe | tReport | progress | search | upload | settings
+  let sowView = "progress"; // progress | search | upload | settings
   let sowSubject = null;
   let sowClass = null;
   let sowSearchSubject = null;
   let sowSearchSelectedTopicId = null;
-  let sowObservations = [];
-  let obsTeacher = null, obsSubject = null, obsClass = null, obsSection = null;
-  let obsBoard = "", obsNote = "", obsPick = null, obsLastId = null;
-  let repTeacherSow = "__ALL__";
 
   const app = document.getElementById("app");
   const PW_KEY = "qm_admin_pw";
@@ -272,14 +268,13 @@
       subjectCatalog = subjRows.map(s=>({ key: s.id, title: s.title }));
       sowTopics = await api("/api/sow/topics");
       sowSettings = await api("/api/sow/settings");
-      sowObservations = await api("/api/sow/observations");
       render();
     } catch(e){ console.error(e); }
   }
 
   function logout(){
     localStorage.removeItem(PW_KEY);
-    teachers = []; evaluations = []; students = []; subjectCatalog = []; sowTopics = []; sowSettings = {}; sowObservations = []; currentTeacherId = null; activeTab = "dashboard";
+    teachers = []; evaluations = []; students = []; subjectCatalog = []; sowTopics = []; sowSettings = {}; currentTeacherId = null; activeTab = "dashboard";
     document.querySelectorAll("nav.tabs button[data-tab]").forEach(b=>b.classList.remove("active"));
     document.querySelector('nav.tabs button[data-tab="dashboard"]').classList.add("active");
     showLogin();
@@ -1183,8 +1178,6 @@
   function renderSow(){
     app.innerHTML = `
       <div class="subview-tabs no-print">
-        <button data-sowv="observe" class="${sowView==="observe"?"active":""}">🚶 Kormeer Fasal</button>
-        <button data-sowv="tReport" class="${sowView==="tReport"?"active":""}">📈 Warbixinta Macallimiinta</button>
         <button data-sowv="progress" class="${sowView==="progress"?"active":""}">📊 Xaaladda Casharada</button>
         <button data-sowv="search" class="${sowView==="search"?"active":""}">🔎 Xulo Cashaarka</button>
         <button data-sowv="upload" class="${sowView==="upload"?"active":""}">📤 Soo Deji Scheme</button>
@@ -1196,9 +1189,7 @@
       b.addEventListener("click", ()=>{ sowView = b.dataset.sowv; render(); });
     });
     const body = document.getElementById("sowBody");
-    if (sowView==="observe") renderSowObserve(body);
-    else if (sowView==="tReport") renderSowTeacherReport(body);
-    else if (sowView==="search") renderSowSearch(body);
+    if (sowView==="search") renderSowSearch(body);
     else if (sowView==="upload") renderSowUpload(body);
     else if (sowView==="settings") renderSowSettings(body);
     else renderSowProgress(body);
@@ -1293,411 +1284,494 @@
     });
   }
 
-  // ---------- Classroom observation vs Scheme of Work ----------
-  const SOW_STOP = new Set(["the","of","and","in","to","a","an","on","for","with","by","from","at","as","is","are","its","p","page","pages","chapter","week","unit","topic","lesson","iyo","ee","ka","ku","oo","la","ah","waa","cashar","cutubka"]);
-  const SOW_MONTHS = new Set(["january","february","march","april","may","june","july","august","september","october","november","december"]);
-  function sowClean(s){
-    return String(s||"")
-      .replace(/^\s*\d{1,2}\s+[A-Za-z]+\s*[–-]\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}\s*\d*\s*/, "")
-      .replace(/^\s*\d{1,2}\s*[–-]\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}\s*\d*\s*/, "")
-      .trim();
-  }
-  function sowTokens(s){
-    const t = String(s||"").toLowerCase().replace(/[^a-z\u0600-\u06FF]+/g," ").split(" ")
-      .filter(w=>w.length>1 && !SOW_STOP.has(w) && !SOW_MONTHS.has(w));
-    // common abbreviation: SHM = simple harmonic motion
-    if (t.includes("shm")) ["simple","harmonic","motion"].forEach(w=>{ if (!t.includes(w)) t.push(w); });
-    else if (t.includes("simple") && t.includes("harmonic")) t.push("shm");
-    return t;
-  }
-  function sowTokMatch(a,b){ return a===b || (a.length>=5 && b.length>=5 && a.slice(0,5)===b.slice(0,5)); }
-  function sowScore(board, topic){
-    const nb = String(board||"").toLowerCase().replace(/[^a-z0-9\u0600-\u06FF]+/g," ").trim();
-    const nt = String(topic||"").toLowerCase().replace(/[^a-z0-9\u0600-\u06FF]+/g," ").trim();
-    if (nb.length>=6 && nt.includes(nb)) return 1;
-    const bt = sowTokens(board), tt = sowTokens(topic);
-    if (!bt.length || !tt.length) return 0;
-    let inter = 0;
-    bt.forEach(b=>{ if (tt.some(t=>sowTokMatch(b,t))) inter++; });
-    const containment = inter/bt.length;
-    const dice = 2*inter/(bt.length+tt.length);
-    return Math.max(containment*0.9, dice);
-  }
-  function sowRank(topics, board){
-    return topics.map(t=>({t, score: sowScore(board, t.topic)})).filter(x=>x.score>=0.25).sort((a,b)=>b.score-a.score);
-  }
-  function sowChoose(ranked){
-    if (obsPick === "__none__") return { matched:null };
-    if (obsPick){
-      const f = ranked.find(r=>r.t.id===obsPick);
-      const t = f ? f.t : sowTopics.find(x=>x.id===obsPick);
-      return { matched: t||null, score: f?f.score:0 };
-    }
-    if (!ranked.length) return { matched:null };
-    if (ranked[0].score>=0.5 && (ranked.length===1 || ranked[0].score-ranked[1].score>=0.08)) return { matched:ranked[0].t, score:ranked[0].score };
-    return { pending:true };
-  }
-  function sowStatusInfo(status, diff){
-    if (status==="on_track") return { label:"La Socda Jadwalka", cls:"good" };
-    if (status==="behind"){
-      const d = Math.abs(diff||0);
-      return { label:"Ka Dib Yahay "+d+" Toddobaad", cls: d>=2 ? "bad" : "warn" };
-    }
-    if (status==="ahead"){
-      const d = Math.abs(diff||0);
-      return { label:"Ka Hor Yahay "+d+" Toddobaad", cls: d>=2 ? "warn" : "good" };
-    }
-    if (status==="off_scheme") return { label:"Ma Waafaqsana Scheme-ka", cls:"bad" };
-    return { label:"Lama Xisaabin Karo", cls:"neutral" };
-  }
-  function sowAdvice(status, c){
-    const out = [];
-    const list = (arr)=>arr.slice(0,5).join("; ") + (arr.length>5 ? " iyo kuwo kale" : "");
-    const exp = c.expectedNow && c.expectedNow.length ? "Casharka Scheme-ku ka rabo toddobaadkan: " + list(c.expectedNow) + "." : "";
-    if (status==="on_track"){
-      out.push({k:"ok", t:'Macalinku wuu la socdaa Scheme of Work-ka. Casharka sabuuradda ku qoran ("'+c.matched+'") wuxuu ku qorsheysnaa Toddobaadka '+c.planned+', hadda waxaan ku jirnaa Toddobaadka '+c.week+'.'});
-      out.push({k:"tip", t:"Sii wad xawaaraha hadda jira; hubi in casharkasta uu gaadho ujeedooyinkiisa (learning objectives) ka hor inta aan la gudbin."});
-      if (c.next && c.next.length) out.push({k:"tip", t:"U diyaargarow casharada soo socda: "+list(c.next)+"."});
-      out.push({k:"tip", t:"Ku dar qiimeyn gaaban (su'aalo dhamaadka casharka ah ama quiz) si loo hubiyo fahamka ardayda."});
-      out.push({k:"tip", t:"Diiwaangeli casharada la dhammeeyay si isla-xisaabtan joogto ah loo sameeyo."});
-    } else if (status==="behind"){
-      out.push({k:"warn", t:'Macalinku wuu ka dib yahay Scheme of Work-ka '+c.diff+' toddobaad. Casharka sabuuradda ku qoran ("'+c.matched+'") wuxuu ku qorsheysnaa Toddobaadka '+c.planned+', halka hadda la joogo Toddobaadka '+c.week+'.'});
-      if (exp) out.push({k:"sum", t:exp});
-      if (c.owed && c.owed.length) out.push({k:"warn", t:"Casharada ay ku dhiman yihiin ("+c.owed.length+"): "+list(c.owed)+"."});
-      out.push({k:"tip", t:"Samee qorshe dabbaal ah (catch-up plan) oo qoran: u qaybi casharada hadhay toddobaadyada soo socda oo la wadaag kormeeraha."});
-      out.push({k:"tip", t:"Isku dar casharada isku dhow ee isku mawduuca ah, adigoo ilaalinaya ujeedooyinka ugu muhiimsan ee manhajka."});
-      out.push({k:"tip", t:"Weydiiso saacado dheeri ah (xiisado) toddobaadkii mid ama laba jeer, ama isticmaal wakhtiga fasal-dhaafka ee la ogolyahay."});
-      out.push({k:"tip", t:"Mudnaan sii casharada muhiimka u ah imtixaanka; kuwa yar-yarna ku dabool shaqo guri iyo akhris madax-bannaan."});
-      out.push({k:"tip", t:"Yaree wakhtiga lumaya: bilow casharka wakhtigiisa, diyaari qalabka horay, oo isticmaal tababar kooxeed."});
-      if (c.diff>=3) out.push({k:"warn", t:"Dib u dhacu waa weyn yahay — la kulan kormeeraha/madaxa qaybta muddo 1 toddobaad gudaheed, oo dib u eeg horumarka toddobaad ka dib."});
-      else out.push({k:"tip", t:"Dib u eeg horumarka kormeer kale toddobaadka soo socda."});
-    } else if (status==="ahead"){
-      out.push({k:"sum", t:'Macalinku wuu ka horreeyaa Scheme of Work-ka '+c.diff+' toddobaad. Casharka sabuuradda ku qoran ("'+c.matched+'") wuxuu ku qorsheysnaa Toddobaadka '+c.planned+', halka hadda la joogo Toddobaadka '+c.week+'.'});
-      if (exp) out.push({k:"sum", t:exp});
-      if (c.skipped && c.skipped.length) out.push({k:"warn", t:"Hubi in casharada u dhexeeya aan la dhaafin ("+c.skipped.length+"): "+list(c.skipped)+"."});
-      out.push({k:"tip", t:"Hubi in ardaydu si buuxda u fahmeen casharada horay loo dhigay ka hor inta aan la sii socon (su'aalo gaaban, shaqo guri, imtixaan yar)."});
-      out.push({k:"tip", t:"Isticmaal wakhtiga dheeriga ah dib-u-eegis, layliyo dheeraad ah, iyo su'aalo imtixaannadii hore."});
-      out.push({k:"tip", t:"Ha dhaafin qaybaha wax-ku-ool ah (practicals) iyo qiimeynta joogtada ah ee Scheme-ka ku qoran."});
-      out.push({k:"tip", t:"Haddii xawaarahan uu habboon yahay, la wadaag kormeeraha si Scheme-ka loo cusboonaysiiyo."});
-    } else if (status==="off_scheme"){
-      out.push({k:"warn", t:'Cinwaanka sabuuradda ku qoran ("'+c.board+'") lama helin Scheme of Work-ka maadadan iyo fasalkan.'});
-      if (exp) out.push({k:"sum", t:exp});
-      out.push({k:"tip", t:"Weydii macalinka sababta: dib-u-eegis, casharka oo la bedelay, cinwaan si kale loo qoray, ama wax ka baxsan manhajka?"});
-      out.push({k:"tip", t:"Haddii ay tahay dib-u-eegis ama casharkii la qorsheeyay, ha lagu diiwaangeliyo Scheme-ka."});
-      out.push({k:"tip", t:"Weydii macalinka inuu soo bandhigo diyaarinta casharka (lesson plan) iyo Scheme-kiisa si loo hubiyo waafaqsanaanta."});
-      out.push({k:"tip", t:"Haddii cinwaanku sax yahay laakiin Scheme-ka ma jiro, la socodsii in Scheme-ka la cusboonaysiiyo."});
-    } else {
-      if (c.week==null) out.push({k:"warn", t:'Taariikhda bilowga semester-ka lama dejin, sidaas darteed lama xisaabin karo in macalinku dib dhacsan yahay iyo in kale. Tag "⚙️ Dejinta Semester-ka".'});
-      else out.push({k:"warn", t:'Casharka "'+c.matched+'" lama qorin toddobaadkiisa Scheme-ka, ee lama xisaabin karo dib u dhaca.'});
-    }
-    return out;
-  }
-  function sowAnalyze(topics, matched, week, board){
-    const total = topics.length;
-    const d = { total, label:"", cls:"neutral" };
-    const dueCount = week!=null ? topics.filter(t=>t.week_no!=null && t.week_no<=week).length : null;
-    d.expectedPct = (dueCount!=null && total) ? Math.round(dueCount/total*100) : null;
-    let expectedNow = [];
-    if (week!=null){
-      expectedNow = topics.filter(t=>t.week_no===week).map(t=>sowClean(t.topic));
-      if (!expectedNow.length){
-        const past = topics.filter(t=>t.week_no!=null && t.week_no<week).sort((a,b)=>b.week_no-a.week_no)[0];
-        if (past) expectedNow = [sowClean(past.topic)];
-      }
-    }
-    d.expectedNow = expectedNow;
-    let status = "unknown", diff = null, planned = null;
-    const cleanMatched = matched ? sowClean(matched.topic) : "";
-    if (!matched){ status = "off_scheme"; }
-    else {
-      const idx = topics.findIndex(t=>t.id===matched.id);
-      d.positionPct = (idx>=0 && total) ? Math.round((idx+1)/total*100) : null;
-      d.next = topics.slice(idx+1, idx+4).map(t=>sowClean(t.topic));
-      planned = matched.week_no;
-      if (week!=null && planned!=null){
-        diff = week - planned;
-        status = diff===0 ? "on_track" : (diff>0 ? "behind" : "ahead");
-        if (status==="behind") d.owed = topics.filter(t=>t.week_no!=null && t.week_no>planned && t.week_no<=week && !t.done).map(t=>sowClean(t.topic));
-        if (status==="ahead") d.skipped = topics.filter(t=>t.week_no!=null && t.week_no>=week && t.week_no<planned && !t.done).map(t=>sowClean(t.topic));
-      }
-    }
-    const info = sowStatusInfo(status, diff);
-    d.label = info.label; d.cls = info.cls;
-    const advice = sowAdvice(status, {
-      matched: cleanMatched, board, planned, week, diff: diff==null?0:Math.abs(diff),
-      owed: d.owed, skipped: d.skipped, next: d.next, expectedNow
-    });
-    return { status, diff, planned, week, matchedTitle: cleanMatched, detail:d, advice };
-  }
-  function sowGuessSubject(teacher){
-    const s = String((teacher && teacher.subject) || "").toLowerCase().trim();
-    if (!s) return null;
-    const f = subjectCatalog.find(x=>{ const t = x.title.toLowerCase(); return s.includes(t) || t.includes(s); });
-    return f ? f.key : null;
-  }
-  function sowColor(cls){ return cls==="good" ? "#1e8e5a" : cls==="warn" ? "#c98a13" : cls==="bad" ? "#c0392b" : "#555"; }
-  function sowAdviceHtml(list){
-    if (!list || !list.length) return "";
-    const icon = { ok:"✅", warn:"⚠️", tip:"💡", sum:"📖" };
-    return list.map(a=>`<div style="padding:6px 0;font-size:.85rem;border-bottom:1px dashed #ddd;${a.k==="warn"?"color:#c0392b;":a.k==="ok"?"color:#1e8e5a;":""}">${icon[a.k]||"•"} ${escapeHtml(a.t)}</div>`).join("");
-  }
-  function sowTrendAdvice(list){
-    const out = [];
-    if (list.length>=2){
-      const a = list[0], b = list[1];
-      if (a.diff_weeks!=null && b.diff_weeks!=null){
-        if (a.diff_weeks>0 && a.diff_weeks<b.diff_weeks) out.push({k:"ok", t:"Horumar: dib u dhacu wuu yaraaday marka loo eego kormeerkii hore ("+b.diff_weeks+" → "+a.diff_weeks+" toddobaad). Sii wad dadaalkan."});
-        else if (a.diff_weeks>0 && a.diff_weeks>b.diff_weeks) out.push({k:"warn", t:"Dib u dhacu wuu kordhay marka loo eego kormeerkii hore ("+b.diff_weeks+" → "+a.diff_weeks+" toddobaad). Baaris sababaha oo qorshe dabbaal ah samee."});
-      }
-    }
-    let run = 0;
-    for (const o of list){ if (o.status==="behind") run++; else break; }
-    if (run>=2) out.push({k:"warn", t:"Dib u dhacu wuxuu soo noqnoqday "+run+" kormeer oo isku xig ah — u baahan taageero gaar ah iyo la socod dhow."});
-    const offRun = list.filter(o=>o.status==="off_scheme").length;
-    if (list.length>=3 && offRun>=2) out.push({k:"warn", t:"Marar badan ayaa cinwaanka sabuuradda lagu arkay mid aan Scheme-ka ku jirin ("+offRun+"/"+list.length+") — u baahan hubin ku saabsan sida Scheme-ka loo raacayo."});
-    return out;
-  }
-  function obsReportHtml(o){
-    const tch = teachers.find(x=>x.id===o.teacher_id) || {name:"—", subject:""};
-    const subj = (subjectCatalog.find(s=>s.key===o.subject_key)||{}).title || o.subject_key;
-    const d = o.detail || {};
-    const col = sowColor(d.cls);
-    return `<div id="reportArea">
-      <div class="report-header">
-        <img src="/logo.jpg" alt="logo">
-        <div>
-          <h2 style="margin:0;">Dugsiga Howlwadaag Sare</h2>
-          <div style="font-size:.85rem;color:#555;">Warbixinta Kormeerka Fasalka — Waafaqsanaanta Scheme of Work</div>
-        </div>
-      </div>
-      <table>
-        <tbody>
-          <tr><th style="width:38%;">Macallinka</th><td>${escapeHtml(tch.name)}</td></tr>
-          <tr><th>Maadada</th><td>${escapeHtml(subj)}</td></tr>
-          <tr><th>Fasalka / Qaybta</th><td>${escapeHtml(o.class_name)}${o.section?" ("+escapeHtml(o.section)+")":""}</td></tr>
-          <tr><th>Taariikhda Kormeerka</th><td>${new Date(o.observed_at).toLocaleString()}</td></tr>
-          <tr><th>Cinwaanka Sabuuradda Ku Qoran</th><td><b>${escapeHtml(o.board_text)}</b></td></tr>
-          <tr><th>Casharka Scheme-ka ee La Helay</th><td>${o.matched_topic?escapeHtml(o.matched_topic):"— Lama helin"}</td></tr>
-          <tr><th>Toddobaadka Scheme-ka</th><td>${o.planned_week!=null?o.planned_week:"—"}</td></tr>
-          <tr><th>Toddobaadka Hadda (Semester)</th><td>${o.current_week!=null?o.current_week:"—"}</td></tr>
-          <tr><th>Xaalada</th><td><b style="color:${col};">${escapeHtml(d.label||"")}</b></td></tr>
-          ${d.positionPct!=null&&d.expectedPct!=null?`<tr><th>Horumarka Scheme-ka</th><td>Halka uu joogo: <b>${d.positionPct}%</b> · Halka la rabay ilaa hadda: <b>${d.expectedPct}%</b></td></tr>`:""}
-          ${o.note?`<tr><th>Fiiro Gaar ah</th><td>${escapeHtml(o.note)}</td></tr>`:""}
-        </tbody>
-      </table>
-      <h3 style="margin:14px 0 4px;">Faahfaahin iyo Talooyin</h3>
-      ${sowAdviceHtml(o.advice)}
-      <div style="display:flex;justify-content:space-between;margin-top:30px;font-size:.8rem;">
-        <div>Kormeere: ______________________</div>
-        <div>Macallin: ______________________</div>
-      </div>
-    </div>`;
-  }
-  function teacherSowReportHtml(tch, list){
-    const n = list.length;
-    const cnt = (s)=>list.filter(o=>o.status===s).length;
-    const latest = list[0];
-    const trend = sowTrendAdvice(list);
-    const subjOf = (k)=>(subjectCatalog.find(s=>s.key===k)||{}).title || k;
-    return `<div id="reportArea">
-      <div class="report-header">
-        <img src="/logo.jpg" alt="logo">
-        <div>
-          <h2 style="margin:0;">Dugsiga Howlwadaag Sare</h2>
-          <div style="font-size:.85rem;color:#555;">Warbixinta Macallinka — La Socodka Scheme of Work</div>
-        </div>
-      </div>
-      <table>
-        <tbody>
-          <tr><th style="width:38%;">Macallinka</th><td>${escapeHtml(tch.name)}</td></tr>
-          <tr><th>Maadada</th><td>${escapeHtml(tch.subject||"—")}</td></tr>
-          <tr><th>Tirada Kormeerrada</th><td>${n}</td></tr>
-          <tr><th>La Socda Jadwalka</th><td>${cnt("on_track")} (${n?Math.round(cnt("on_track")/n*100):0}%)</td></tr>
-          <tr><th>Ka Dib Yahay</th><td>${cnt("behind")}</td></tr>
-          <tr><th>Ka Hor Yahay</th><td>${cnt("ahead")}</td></tr>
-          <tr><th>Ma Waafaqsana Scheme-ka</th><td>${cnt("off_scheme")}</td></tr>
-          <tr><th>Taariikhda Warbixinta</th><td>${new Date().toLocaleDateString()}</td></tr>
-        </tbody>
-      </table>
-      ${latest?`<h3 style="margin:14px 0 4px;">Xaaladda Ugu Dambeysay — ${escapeHtml(subjOf(latest.subject_key))} (${escapeHtml(latest.class_name)})</h3>
-      <p style="font-size:.85rem;margin:4px 0;">Cinwaanka sabuuradda: <b>${escapeHtml(latest.board_text)}</b> · <b style="color:${sowColor((latest.detail||{}).cls)};">${escapeHtml((latest.detail||{}).label||"")}</b></p>
-      ${sowAdviceHtml(latest.advice)}`:""}
-      ${trend.length?`<h3 style="margin:14px 0 4px;">Isbeddelka Muddada Dheer</h3>${sowAdviceHtml(trend)}`:""}
-      <h3 style="margin:14px 0 4px;">Taariikhda Kormeerrada</h3>
-      <table>
-        <thead><tr><th>Taariikh</th><th>Maado / Fasal</th><th>Cinwaanka Sabuuradda</th><th>Tod. Scheme</th><th>Tod. Hadda</th><th>Xaalada</th></tr></thead>
-        <tbody>${list.map(o=>`<tr>
-          <td>${new Date(o.observed_at).toLocaleDateString()}</td>
-          <td>${escapeHtml(subjOf(o.subject_key))} / ${escapeHtml(o.class_name)}${o.section?" "+escapeHtml(o.section):""}</td>
-          <td>${escapeHtml(o.board_text)}</td>
-          <td>${o.planned_week!=null?o.planned_week:"—"}</td>
-          <td>${o.current_week!=null?o.current_week:"—"}</td>
-          <td style="color:${sowColor((o.detail||{}).cls)};font-weight:700;">${escapeHtml((o.detail||{}).label||"")}</td>
-        </tr>`).join("")}</tbody>
-      </table>
-      <div style="display:flex;justify-content:space-between;margin-top:30px;font-size:.8rem;">
-        <div>Kormeere: ______________________</div>
-        <div>Macallin: ______________________</div>
-      </div>
-    </div>`;
-  }
-
-  function renderSowObserve(body){
-    if (!teachers.length){
-      body.innerHTML = `<div class="card"><div class="empty">Marka hore ku dar macallimiin (tab-ka Macallimiinta).</div></div>`;
-      return;
-    }
+  function renderSowSearch(body){
     if (!subjectCatalog.length){
       body.innerHTML = `<div class="card"><div class="empty">Marka hore ku dar maado (tab-ka Ardayda → 🎓 Maadooyinka Dugsiga).</div></div>`;
       return;
     }
     const classes = studentClasses().length ? studentClasses() : ["Form 4"];
-    if (!obsTeacher || !teachers.some(t=>t.id===obsTeacher)){
-      obsTeacher = teachers[0].id;
-      obsSubject = null;
-    }
-    const tch = teachers.find(t=>t.id===obsTeacher);
-    if (!obsSubject || !subjectCatalog.some(s=>s.key===obsSubject)) obsSubject = sowGuessSubject(tch) || subjectCatalog[0].key;
-    if (!obsClass || !classes.includes(obsClass)) obsClass = classes[0];
-    const sections = studentSections(obsClass);
-    if (sections.length){ if (obsSection===null || !sections.includes(obsSection)) obsSection = sections[0]; }
-    else obsSection = "";
-
-    const topics = sowTopicsFor(obsSubject, obsClass);
-    const week = currentWeekNo();
-    const subjTitle = (subjectCatalog.find(s=>s.key===obsSubject)||{}).title || "";
-    const lastObs = obsLastId ? sowObservations.find(o=>o.id===obsLastId) : null;
-
-    let expectedNow = [];
-    if (week!=null){
-      expectedNow = topics.filter(t=>t.week_no===week).map(t=>sowClean(t.topic));
-      if (!expectedNow.length){
-        const past = topics.filter(t=>t.week_no!=null && t.week_no<week).sort((a,b)=>b.week_no-a.week_no)[0];
-        if (past) expectedNow = [sowClean(past.topic)];
-      }
-    }
+    if (!sowSearchSubject || !subjectCatalog.some(s=>s.key===sowSearchSubject)) sowSearchSubject = subjectCatalog[0].key;
+    const cls = classes.length===1 ? classes[0] : (sowClass && classes.includes(sowClass) ? sowClass : classes[0]);
+    const subjTitle = (subjectCatalog.find(s=>s.key===sowSearchSubject)||{}).title || "";
+    const topics = sowTopicsFor(sowSearchSubject, cls);
+    if (sowSearchSelectedTopicId && !topics.some(t=>t.id===sowSearchSelectedTopicId)) sowSearchSelectedTopicId = null;
 
     body.innerHTML = `
-      ${lastObs ? `
       <div class="card">
-        <h2>✅ Kormeerka waa la kaydiyay</h2>
-        <div class="no-print" style="margin-bottom:10px;">
-          <button class="btn gold" id="btnObsPrint">🖨️ Daabac / Deji Warbixinta (PDF)</button>
-          <button class="btn secondary" id="btnObsNew">➕ Kormeer Cusub</button>
-        </div>
-        ${obsReportHtml(lastObs)}
-      </div>` : ""}
-      <div class="card no-print">
-        <h2>🚶 Kormeer Fasal</h2>
-        <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">Dooro macallinka iyo fasalka, kadibna qor cinwaanka sabuuradda ku qoran — nidaamku wuxuu isla markiiba la barbar dhigayaa Scheme of Work-ka.</div>
-        <label>Macallinka</label>
-        <select id="obsTeacherSel">${teachers.map(t=>`<option value="${escapeHtml(t.id)}" ${t.id===obsTeacher?"selected":""}>${escapeHtml(t.name)}${t.subject?" — "+escapeHtml(t.subject):""}</option>`).join("")}</select>
+        <h2>🔎 Xulo Cashaarka — Hel Xaaladdiisa Scheme of Work-ka</h2>
         <label>Maadada</label>
-        <select id="obsSubjectSel">${subjectCatalog.map(s=>`<option value="${escapeHtml(s.key)}" ${s.key===obsSubject?"selected":""}>${escapeHtml(s.title)}</option>`).join("")}</select>
-        ${classes.length>1?`<label>Fasalka</label><select id="obsClassSel">${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===obsClass?"selected":""}>${escapeHtml(c)}</option>`).join("")}</select>`:""}
-        ${sections.length?`<label>Qaybta (Section)</label><select id="obsSectionSel">${sections.map(s=>`<option value="${escapeHtml(s)}" ${s===obsSection?"selected":""}>${escapeHtml(s)}</option>`).join("")}</select>`:""}
+        <select id="sowSearchSubjectSel">${subjectCatalog.map(s=>`<option value="${escapeHtml(s.key)}" ${s.key===sowSearchSubject?"selected":""}>${escapeHtml(s.title)}</option>`).join("")}</select>
+        ${classes.length>1 ? `<label>Fasalka</label><select id="sowSearchClassSel">${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===cls?"selected":""}>${escapeHtml(c)}</option>`).join("")}</select>` : ""}
+        <label>Cinwaanka Cashaarka</label>
+        ${topics.length===0 ? `<div class="empty">Wali lama gelin Scheme of Work-ka "${escapeHtml(subjTitle)}" — ${escapeHtml(cls)}. Tag "📤 Soo Deji Scheme" si aad u soo geliso.</div>` : `
+        <select id="sowSearchSelect">
+          <option value="">— Dooro cinwaanka casharka —</option>
+          ${topics.map(t=>`<option value="${t.id}" ${t.id===sowSearchSelectedTopicId?"selected":""}>${t.week_no!=null?`W${t.week_no} — `:""}${escapeHtml(t.topic)}${t.done?" ✓":""}</option>`).join("")}
+        </select>
+        `}
       </div>
-      <div class="card no-print">
-        <h2>📖 Casharka Laga Filayo Toddobaadkan${week!=null?" (Toddobaad "+week+")":""}</h2>
-        ${week==null ? `<div class="compare-note pending">⏳ Taariikhda bilowga semester-ka lama dejin — tag "⚙️ Dejinta Semester-ka".</div>` :
-          !topics.length ? `<div class="compare-note pending">Scheme of Work-ka "${escapeHtml(subjTitle)}" ee ${escapeHtml(obsClass)} wali lama gelin — tag "📤 Soo Deji Scheme".</div>` :
-          expectedNow.length ? `<p style="font-weight:700;color:var(--navy);margin:4px 0;">${expectedNow.map(escapeHtml).join(" / ")}</p>` :
-          `<div class="empty">Wax cashar ah looma qorsheeyn toddobaadkan.</div>`}
-        <label>Cinwaanka Sabuuradda Ku Qoran</label>
-        <input type="text" id="obsBoardInput" placeholder="tusaale: Simple harmonic motion; period in SHM" value="${escapeHtml(obsBoard)}">
-        <div id="obsLive"></div>
+      <div id="sowSearchReport"></div>
+    `;
+    document.getElementById("sowSearchSubjectSel").addEventListener("change",(e)=>{ sowSearchSubject=e.target.value; sowSearchSelectedTopicId=null; render(); });
+    const clsSel = document.getElementById("sowSearchClassSel");
+    if (clsSel) clsSel.addEventListener("change",(e)=>{ sowClass=e.target.value; sowSearchSelectedTopicId=null; render(); });
+    const topicSel = document.getElementById("sowSearchSelect");
+    if (topicSel) topicSel.addEventListener("change",(e)=>{ sowSearchSelectedTopicId = e.target.value || null; renderReport(); });
+
+    function renderReport(){
+      const area = document.getElementById("sowSearchReport");
+      const t = sowSearchSelectedTopicId ? sowTopics.find(x=>x.id===sowSearchSelectedTopicId) : null;
+      if (!t){ area.innerHTML = ""; return; }
+      const week = currentWeekNo();
+      const today = new Date().toLocaleDateString();
+      let statusRow, statusNote;
+      if (week==null){
+        statusRow = `— Lama Xisaabin Karo`;
+        statusNote = `<p style="font-size:.85rem;"><i>Wali lama dejin taariikhda bilowga semester-ka (tag "⚙️ Dejinta Semester-ka").</i></p>`;
+      } else if (t.week_no==null){
+        statusRow = `— Toddobaad Lama Qorin`;
+        statusNote = `<p style="font-size:.85rem;"><i>Casharkan lama qorin toddobaadkiisa Scheme of Work-ka.</i></p>`;
+      } else if (t.done){
+        statusRow = `<span class="yes">✓ Macalinku Wuu Dhammeeyay</span>`;
+        statusNote = "";
+      } else if (t.week_no <= week){
+        const behind = week - t.week_no;
+        statusRow = `<span class="no">⚠️ Dib U Dhacay (${behind} Toddobaad)</span>`;
+        statusNote = `<p style="font-size:.85rem;"><b style="color:#c0392b;">⚠️ Macalinku weli ma dhammaynin casharkan.</b> Target-ka Scheme of Work-ku wuxuu ahaa in la dhammeeyo Toddobaad ${t.week_no}, hadda waxaan ku jirnaa Toddobaad ${week}.</p>`;
+      } else {
+        statusRow = `🕒 Weli Lama Gaadhin`;
+        statusNote = `<p style="font-size:.85rem;"><b style="color:#1e8e5a;">🕒 Weli lama gaadhin casharkan</b> — waad la socotaa jadwalka.</p>`;
+      }
+      area.innerHTML = `
+        <div class="card no-print">
+          <button class="btn gold" id="printSowSearchBtn">🖨️ Daabac / Deji Warbixinta Rasmiga ah (PDF)</button>
+        </div>
+        <div id="reportArea">
+          <div class="report-header">
+            <img src="/logo.jpg" alt="logo">
+            <div>
+              <h2 style="margin:0;">Dugsiga Howlwadaag Sare</h2>
+              <div style="font-size:.85rem;color:#555;">Warbixinta Rasmiga ah — Cashar Gaar ah — ${escapeHtml(subjTitle)} (${escapeHtml(cls)})</div>
+            </div>
+          </div>
+          <p style="font-size:.85rem;">Taariikhda Warbixinta: <b>${today}</b></p>
+          <table>
+            <tbody>
+              <tr><th style="width:35%;">Cinwaanka Cashaarka</th><td>${escapeHtml(t.topic)}</td></tr>
+              <tr><th>Toddobaadka la Qorsheeyay (Target)</th><td>${t.week_no!=null?t.week_no:"Lama qorin"}</td></tr>
+              <tr><th>Toddobaadka Hadda ee Semester-ka</th><td>${week!=null?week:"Lama dejin"}</td></tr>
+              <tr><th>Xaalada</th><td>${statusRow}</td></tr>
+            </tbody>
+          </table>
+          ${statusNote}
+        </div>
+        <div class="card no-print" style="margin-top:12px;">
+          <button class="subj-chip ${t.done?'sel':''}" id="btnSowSearchToggle">${t.done?'✕ Ka Saar Calaamadda':'💾 Kaydi — Macalinku Wuu Dhammeeyay'}</button>
+        </div>
+      `;
+      document.getElementById("printSowSearchBtn").addEventListener("click", ()=>window.print());
+      document.getElementById("btnSowSearchToggle").addEventListener("click", async ()=>{
+        const btn = document.getElementById("btnSowSearchToggle"); btn.disabled=true;
+        try { await toggleSowTopic(t.id, !t.done); } finally { btn.disabled=false; }
+      });
+    }
+    if (sowSearchSelectedTopicId) renderReport();
+  }
+
+  function renderSowUpload(body){
+    if (!subjectCatalog.length){
+      body.innerHTML = `<div class="card"><div class="empty">Marka hore ku dar maado (tab-ka Ardayda → 🎓 Maadooyinka Dugsiga).</div></div>`;
+      return;
+    }
+    const classes = studentClasses().length ? studentClasses() : ["Form 4"];
+    if (!sowSubject || !subjectCatalog.some(s=>s.key===sowSubject)) sowSubject = subjectCatalog[0].key;
+    if (!sowClass || !classes.includes(sowClass)) sowClass = classes[0];
+    const existing = sowTopicsFor(sowSubject, sowClass);
+
+    body.innerHTML = `
+      <div class="card">
+        <h2>Dooro Maadada iyo Fasalka</h2>
+        <label>Maadada</label>
+        <select id="sowSubjectSel2">${subjectCatalog.map(s=>`<option value="${escapeHtml(s.key)}" ${s.key===sowSubject?"selected":""}>${escapeHtml(s.title)}</option>`).join("")}</select>
+        <label>Fasalka</label>
+        <select id="sowClassSel2">${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===sowClass?"selected":""}>${escapeHtml(c)}</option>`).join("")}</select>
+      </div>
+      <div class="card">
+        <h2>📤 Soo Deji Scheme of Work (Excel/CSV)</h2>
+        <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">
+          File-ku waa in uu leeyahay tiirar "Week" iyo "Topic" (ama "Lesson"). Soo dejintani way <b>beddeshaa</b> Scheme of Work-kii hore ee maadadan iyo fasalkan.
+          ${existing.length ? ` Hadda waxaa jira ${existing.length} cashar oo la geliyay (${existing.filter(t=>t.done).length} dhammaystiran).` : ""}
+        </div>
+        <input type="file" id="sowFileInput" accept=".xlsx,.xls,.csv">
+        <div id="sowFileResult" style="font-size:.8rem;color:var(--text-dim);margin-top:8px;"></div>
+      </div>
+      <div class="card">
+        <h2>Ama ku dheji qoraal (Week{tab}Topic, hal xariiq walba)</h2>
+        <textarea id="sowPasteText" style="min-height:160px;" placeholder="1	Intro to Algebra
+2	Linear Equations
+3	Quadratic Equations"></textarea>
+        <button class="btn secondary" id="btnSowPaste">📋 Beddel Scheme-ka</button>
+        <div id="sowPasteResult" style="font-size:.8rem;color:var(--text-dim);margin-top:6px;"></div>
+      </div>
+      <div class="card">
+        <h2>➕ Ku Dar Hal Cashar</h2>
+        <label>Toddobaadka (ikhtiyaari)</label>
+        <input type="text" id="sowNewWeek" placeholder="tusaale: 4">
+        <label>Cashaarka / Mowduuca</label>
+        <input type="text" id="sowNewTopic" placeholder="tusaale: Quadratic Equations">
+        <button class="btn" id="btnSowAddOne">➕ Ku Dar</button>
+      </div>
+      <div class="card">
+        <h2>Casharada Jira (${existing.length})</h2>
+        ${existing.length===0 ? `<div class="empty">Wali cashar lama gelin.</div>` :
+        existing.map(t=>`<div class="student-row" style="cursor:default;">
+          <div class="name">${t.week_no!=null?`W${t.week_no} — `:""}${escapeHtml(t.topic)} ${t.done?'<span class="badge good">✓</span>':''}</div>
+          <button class="del-x" data-delsow2="${t.id}" title="Tirtir">✕</button>
+        </div>`).join("")}
+      </div>
+      ${existing.length ? `
+      <div class="card">
+        <h2>🗑️ Tirtir Dhammaan Scheme-ka</h2>
+        <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">
+          Haddii aad khalad ku samaysay soo gelinta, waxaad halkan ka tirtiri kartaa dhammaan ${existing.length}-da cashar ee "${escapeHtml((subjectCatalog.find(s=>s.key===sowSubject)||{}).title||"")}" — ${escapeHtml(sowClass)}, kadibna mid cusub soo geli.
+        </div>
+        <button class="btn secondary" id="btnClearSow" style="color:var(--bad);border-color:var(--bad);">🗑️ Tirtir Dhammaan Scheme-ka Maadadan</button>
+      </div>` : ""}
+    `;
+    document.getElementById("sowSubjectSel2").addEventListener("change",(e)=>{ sowSubject=e.target.value; render(); });
+    document.getElementById("sowClassSel2").addEventListener("change",(e)=>{ sowClass=e.target.value; render(); });
+
+    document.getElementById("sowFileInput").addEventListener("change", async (e)=>{
+      const file = e.target.files[0];
+      if (!file) return;
+      const setMsg = (m)=>{ const d=document.getElementById("sowFileResult"); if (d) d.textContent = m; };
+      setMsg("⏳ Akhrinaya file-ka...");
+      try {
+        const rows = await extractSowRowsFromFile(file);
+        if (!rows.length){ setMsg("⚠️ Wax cashar ah lagama helin file-kan. Hubi tiirarka Week/Topic."); return; }
+        setMsg(`⏳ Waa la helay ${rows.length} cashar, geliyaa...`);
+        const r = await bulkSowTopics({ subjectKey: sowSubject, className: sowClass, rows });
+        setMsg(`✅ ${r.created} cashar ayaa loo geliyay Scheme of Work-ka.`);
+      } catch(err){ setMsg("⚠️ Khalad: " + (err && err.message ? err.message : "wax lama akhriyi karin file-ka.")); }
+    });
+
+    document.getElementById("btnSowPaste").addEventListener("click", async ()=>{
+      const raw = document.getElementById("sowPasteText").value;
+      const rows = parseSowRows(raw);
+      const setMsg = (m)=>{ const d=document.getElementById("sowPasteResult"); if (d) d.textContent = m; };
+      if (!rows.length){ setMsg("⚠️ Wax xog ah lama helin."); return; }
+      const btn = document.getElementById("btnSowPaste"); btn.disabled=true; btn.textContent="Kaydinaya...";
+      try {
+        const r = await bulkSowTopics({ subjectKey: sowSubject, className: sowClass, rows });
+        const d = document.getElementById("sowPasteResult"); if (d) d.textContent = `✅ ${r.created} cashar ayaa loo geliyay.`;
+      } finally { btn.disabled=false; btn.textContent="📋 Beddel Scheme-ka"; }
+    });
+
+    document.getElementById("btnSowAddOne").addEventListener("click", async ()=>{
+      const weekNo = document.getElementById("sowNewWeek").value.trim();
+      const topic = document.getElementById("sowNewTopic").value.trim();
+      if (!topic){ alert("Fadlan geli cashaarka."); return; }
+      const btn = document.getElementById("btnSowAddOne"); btn.disabled=true;
+      try { await addSowTopic({ subjectKey: sowSubject, className: sowClass, weekNo: weekNo||null, topic }); } finally { btn.disabled=false; }
+    });
+
+    body.querySelectorAll("[data-delsow2]").forEach(el=>{
+      el.addEventListener("click", async ()=>{
+        if (confirm("Ma hubtaa inaad tirtirto casharkan?")) await deleteSowTopic(el.dataset.delsow2);
+      });
+    });
+    const clearBtn = document.getElementById("btnClearSow");
+    if (clearBtn){
+      clearBtn.addEventListener("click", async ()=>{
+        const subjTitle = (subjectCatalog.find(s=>s.key===sowSubject)||{}).title||"";
+        if (confirm(`Ma hubtaa inaad tirtirto dhammaan ${existing.length}-da cashar ee "${subjTitle}" — ${sowClass}? Tallaabadan lama soo celin karo.`)){
+          clearBtn.disabled = true; clearBtn.textContent = "Tirtirayaa...";
+          try { await clearSowScheme(sowSubject, sowClass); } finally { clearBtn.disabled = false; clearBtn.textContent = "🗑️ Tirtir Dhammaan Scheme-ka Maadadan"; }
+        }
+      });
+    }
+  }
+
+  function renderSowSettings(body){
+    const week = currentWeekNo();
+    body.innerHTML = `
+      <div class="card">
+        <h2>⚙️ Dejinta Semester-ka</h2>
+        <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">
+          Geli taariikhda ay ka bilaabatay semester-ka/term-ka si nidaamku u xisaabiyo toddobaadka hadda socda, oo uu kuu sheego halka aad joogto Scheme of Work marka loo eego jadwalka.
+        </div>
+        <label>Taariikhda Bilowga Semester-ka</label>
+        <input type="date" id="sowTermStart" value="${escapeHtml(sowSettings.term_start_date||"")}">
+        <button class="btn" id="btnSaveSowSettings">💾 Kaydi</button>
+        ${week!=null ? `<p style="font-size:.85rem;margin-top:10px;">Toddobaadka hadda socda ee semester-ka: <b>${week}</b></p>` : ""}
+      </div>
+    `;
+    document.getElementById("btnSaveSowSettings").addEventListener("click", async ()=>{
+      const val = document.getElementById("sowTermStart").value;
+      const btn = document.getElementById("btnSaveSowSettings"); btn.disabled=true;
+      try { await saveSowSettings(val); } finally { btn.disabled=false; }
+    });
+  }
+
+  function renderNewEval(){
+    const today = new Date().toISOString().slice(0,10);
+    if (teachers.length===0){
+      app.innerHTML = `<div class="card"><div class="empty">Marka hore ku dar macallin tab-ka "Macallimiinta".</div></div>`;
+      return;
+    }
+    evalState = {};
+    CRITERIA.forEach(c=>{ evalState[c.key] = { rating:null, comment:"" }; });
+
+    const uniqueSubjects = Array.from(new Set(teachers.map(t=>t.subject).filter(Boolean))).sort();
+
+    app.innerHTML = `
+      <div class="card">
+        <h2>Foomka Kormeerka iyo Qiimeynta Macallinka</h2>
+        <label>Dugsiga</label>
+        <input type="text" id="evalSchool" value="Dugsiga Howlwadaag Sare">
+        <label>Dooro Macallinka</label>
+        <select id="evalTeacherSel">
+          <option value="">— Dooro —</option>
+          ${teachers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(t=>`<option value="${t.id}" data-subject="${escapeHtml(t.subject||"")}" ${preselectTeacher===t.id?"selected":""}>${escapeHtml(t.name)}${t.subject?" — "+escapeHtml(t.subject):""}</option>`).join("")}
+        </select>
+        <label>Maadada</label>
+        <select id="evalSubjectSel">
+          <option value="">— Dooro Maadada —</option>
+          ${uniqueSubjects.map(s=>`<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("")}
+          <option value="__other__">Kale (qor gacanta)</option>
+        </select>
+        <input type="text" id="evalSubjectOther" placeholder="Qor maadada" style="display:none;margin-top:6px;">
+        <label>Fasalka</label>
+        <input type="text" id="evalClass" placeholder="tusaale: Fasalka 5">
+        <label>Taariikhda Kormeerka</label>
+        <input type="date" id="evalDate" value="${today}">
+        <label>Magaca Kormeeraha</label>
+        <input type="text" id="evalSupervisor" placeholder="Magacaaga">
+        <div class="scale-legend">
+          <b>Heerarka Qiimeynta:</b><br>
+          5 = Heer Sare &nbsp; 4 = Wanaagsan &nbsp; 3 = La Aqbali Karo &nbsp; 2 = U Baahan Horumarin &nbsp; 1 = U Baahan Taageero Degdeg ah
+        </div>
+        <label>Progress-ka Buuxinta (<span id="progressCount">0</span>/${TOTAL_ITEMS})</label>
+        <div class="progress-bar-wrap"><div class="progress-bar" id="progressBar" style="width:0%;"></div></div>
+      </div>
+
+      <div id="itemsWrap"></div>
+
+      <div class="card">
+        <h2>Gunaad</h2>
+        <label>Gunaadka Kormeeraha</label>
+        <textarea id="evalConclusion" placeholder="Gunaadka guud ee qiimeynta..."></textarea>
+        <button class="btn" id="saveEvalBtn" disabled>💾 Kaydi Qiimeynta (buuxi 10-da su'aal marka hore)</button>
       </div>
     `;
 
-    const bindSel = (id, fn)=>{ const el = document.getElementById(id); if (el) el.addEventListener("change", fn); };
-    bindSel("obsTeacherSel", (e)=>{ obsTeacher=e.target.value; obsSubject=null; obsPick=null; render(); });
-    bindSel("obsSubjectSel", (e)=>{ obsSubject=e.target.value; obsPick=null; render(); });
-    bindSel("obsClassSel", (e)=>{ obsClass=e.target.value; obsSection=null; obsPick=null; render(); });
-    bindSel("obsSectionSel", (e)=>{ obsSection=e.target.value; render(); });
-    const pb = document.getElementById("btnObsPrint"); if (pb) pb.addEventListener("click", ()=>window.print());
-    const nb = document.getElementById("btnObsNew"); if (nb) nb.addEventListener("click", ()=>{ obsLastId=null; render(); });
-
-    const live = document.getElementById("obsLive");
-    function updateLive(){
-      const board = obsBoard.trim();
-      if (!board){ live.innerHTML = ""; return; }
-      if (!topics.length){ live.innerHTML = ""; return; }
-      const ranked = sowRank(topics, board);
-      const ch = sowChoose(ranked);
-      let html = "";
-      if (ranked.length){
-        html += `<label>Casharka ugu dhow ee Scheme-ka (taabo si aad u xaqiijiso)</label>`;
-        html += ranked.slice(0,4).map(r=>{
-          const sel = ch.matched && ch.matched.id===r.t.id;
-          return `<div class="student-row" data-pick="${r.t.id}" style="${sel?"border:2px solid var(--good);border-radius:10px;padding:10px;":""}">
-            <div><div class="name">${r.t.week_no!=null?`<span style="color:var(--text-dim);font-weight:600;">W${r.t.week_no}</span> `:""}${escapeHtml(sowClean(r.t.topic))}</div></div>
-            <span class="badge ${sel?"good":"neutral"}">${Math.round(r.score*100)}%</span>
-          </div>`;
-        }).join("");
-      } else {
-        html += `<div class="compare-note pending">Cinwaankan wax la mid ah lagama helin Scheme-ka.</div>`;
+    const teacherSel = document.getElementById("evalTeacherSel");
+    const subjectSel = document.getElementById("evalSubjectSel");
+    const subjectOther = document.getElementById("evalSubjectOther");
+    teacherSel.addEventListener("change", ()=>{
+      const opt = teacherSel.options[teacherSel.selectedIndex];
+      const subj = opt ? opt.dataset.subject : "";
+      if (subj && Array.from(subjectSel.options).some(o=>o.value===subj)){
+        subjectSel.value = subj; subjectOther.style.display = "none";
       }
-      html += `<button class="subj-chip ${obsPick==="__none__"?"sel":""}" data-pick="__none__" style="margin-top:8px;">✕ Kuma jiro Scheme-ka</button>`;
-      const decided = !ch.pending;
-      if (decided){
-        const an = sowAnalyze(topics, ch.matched, week, board);
-        html += `<div style="margin-top:12px;padding:12px;border-radius:12px;background:var(--surface-2);">
-          <span class="badge ${an.detail.cls}">${escapeHtml(an.detail.label)}</span>
-          ${an.detail.positionPct!=null&&an.detail.expectedPct!=null?`<span style="font-size:.8rem;margin-left:8px;">Halka uu joogo ${an.detail.positionPct}% · la rabay ${an.detail.expectedPct}%</span>`:""}
-          <div style="margin-top:8px;">${sowAdviceHtml(an.advice)}</div>
-        </div>
-        <label>Fiiro gaar ah (ikhtiyaari)</label>
-        <input type="text" id="obsNoteInput" placeholder="tusaale: fasalka wuu is-dhexgalay, dib-u-eegis ayaa la sameeyay..." value="${escapeHtml(obsNote)}">
-        <button class="btn" id="btnObsSave" style="margin-top:10px;">💾 Kaydi Kormeerka</button>`;
-        live.innerHTML = html;
-        document.getElementById("obsNoteInput").addEventListener("input", (e)=>{ obsNote = e.target.value; });
-        document.getElementById("btnObsSave").addEventListener("click", async ()=>{
-          const btn = document.getElementById("btnObsSave"); btn.disabled = true; btn.textContent = "Kaydinaya...";
-          try {
-            const payload = {
-              teacherId: obsTeacher, subjectKey: obsSubject, className: obsClass, section: obsSection||"",
-              boardText: board, matchedTopicId: ch.matched ? ch.matched.id : null, matchedTopic: an.matchedTitle,
-              plannedWeek: an.planned, currentWeek: week, diffWeeks: an.diff, status: an.status,
-              matchScore: ch.score || 0, advice: an.advice, detail: an.detail, note: obsNote
-            };
-            const r = await api("/api/sow/observations", { method:"POST", body: JSON.stringify(payload) });
-            obsLastId = r.id; obsBoard = ""; obsNote = ""; obsPick = null;
-            await loadAll();
-            window.scrollTo({ top: 0, behavior: "smooth" });
-          } catch(err){
-            btn.disabled = false; btn.textContent = "💾 Kaydi Kormeerka";
-            alert("Khalad: " + (err && err.message ? err.message : "lama kaydin karin"));
-          }
-        });
-      } else {
-        html += `<div class="compare-note pending" style="margin-top:10px;">Dooro casharka saxda ah ee kor ku qoran, ama taabo "Kuma jiro Scheme-ka".</div>`;
-        live.innerHTML = html;
-      }
-      live.querySelectorAll("[data-pick]").forEach(el=>{
-        el.addEventListener("click", ()=>{ obsPick = el.dataset.pick; updateLive(); });
-      });
+    });
+    subjectSel.addEventListener("change", ()=>{
+      subjectOther.style.display = subjectSel.value === "__other__" ? "block" : "none";
+    });
+    if (preselectTeacher){
+      const opt = Array.from(teacherSel.options).find(o=>o.value===preselectTeacher);
+      const subj = opt ? opt.dataset.subject : "";
+      if (subj && Array.from(subjectSel.options).some(o=>o.value===subj)) subjectSel.value = subj;
     }
-    document.getElementById("obsBoardInput").addEventListener("input", (e)=>{ obsBoard = e.target.value; obsPick = null; updateLive(); });
-    updateLive();
+
+    const wrap = document.getElementById("itemsWrap");
+    CRITERIA.forEach(c=>{
+      const div = document.createElement("div");
+      div.className = "qitem";
+      div.innerHTML = `
+        <div class="qitem-title">${c.title}</div>
+        <div class="qitem-text">${escapeHtml(c.text)}</div>
+        <div class="rate-row">
+          <button class="rate-btn" data-r="5" data-item="${c.key}">5</button>
+          <button class="rate-btn" data-r="4" data-item="${c.key}">4</button>
+          <button class="rate-btn" data-r="3" data-item="${c.key}">3</button>
+          <button class="rate-btn" data-r="2" data-item="${c.key}">2</button>
+          <button class="rate-btn" data-r="1" data-item="${c.key}">1</button>
+        </div>
+        <input type="text" class="qitem-comment" data-comment="${c.key}" placeholder="Comment/Faallo (ikhtiyaari)">
+      `;
+      wrap.appendChild(div);
+    });
+
+    function updateProgress(){
+      let done = 0;
+      Object.values(evalState).forEach(v=>{ if (v.rating!==null) done++; });
+      document.getElementById("progressCount").textContent = done;
+      document.getElementById("progressBar").style.width = Math.round((done/TOTAL_ITEMS)*100)+"%";
+      const saveBtn = document.getElementById("saveEvalBtn");
+      if (done === TOTAL_ITEMS){
+        saveBtn.disabled = false;
+        saveBtn.textContent = "💾 Kaydi Qiimeynta";
+      } else {
+        saveBtn.disabled = true;
+        saveBtn.textContent = `💾 Kaydi Qiimeynta (${TOTAL_ITEMS-done} baaqi)`;
+      }
+    }
+
+    wrap.querySelectorAll(".rate-btn").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const key = btn.dataset.item;
+        const r = Number(btn.dataset.r);
+        evalState[key].rating = r;
+        wrap.querySelectorAll(`.rate-btn[data-item="${key}"]`).forEach(b=>b.classList.remove("sel"));
+        btn.classList.add("sel");
+        updateProgress();
+      });
+    });
+    wrap.querySelectorAll(".qitem-comment").forEach(inp=>{
+      inp.addEventListener("input", ()=>{
+        const key = inp.dataset.comment;
+        evalState[key].comment = inp.value;
+      });
+    });
+
+    document.getElementById("saveEvalBtn").addEventListener("click", async ()=>{
+      const teacherId = document.getElementById("evalTeacherSel").value;
+      const date = document.getElementById("evalDate").value;
+      if (!teacherId){ alert("Fadlan dooro macallin."); return; }
+      if (!date){ alert("Fadlan geli taariikhda."); return; }
+      const items = CRITERIA.map(c=>({ key:c.key, title:c.title, text:c.text, rating:evalState[c.key].rating, comment:evalState[c.key].comment }));
+      const subjSelVal = document.getElementById("evalSubjectSel").value;
+      const subject = subjSelVal === "__other__" ? document.getElementById("evalSubjectOther").value : subjSelVal;
+      const meta = {
+        school: document.getElementById("evalSchool").value,
+        class: document.getElementById("evalClass").value,
+        subject: subject,
+        supervisorName: document.getElementById("evalSupervisor").value,
+        conclusion: document.getElementById("evalConclusion").value
+      };
+      const btn = document.getElementById("saveEvalBtn"); btn.disabled=true; btn.textContent="Kaydinaya...";
+      try {
+        await addEvaluation(teacherId, date, items, meta);
+        preselectTeacher = null; currentTeacherId = teacherId;
+        await loadAll();
+        document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.remove("active"));
+        document.querySelector('nav.tabs button[data-tab="teachers"]').classList.add("active");
+        activeTab = "teachers"; render();
+      } catch(e){ alert("Khalad ayaa dhacay: "+e.message); btn.disabled=false; btn.textContent="💾 Kaydi Qiimeynta"; }
+    });
+
+    updateProgress();
   }
 
-  function renderSowTeacherReport(body){
-    const withObs = (id)=>sowObservations.filter(o=>o.teacher_id===id);
-    const subjOf = (k)=>(subjectCatalog.find(s=>s.key===k)||{}).title || k;
-    if (repTeacherSow!=="__ALL__" && !teachers.some(t=>t.id===repTeacherSow)) repTeacherSow = "__ALL__";
-    const sel = `<div class="card no-print">
-      <h2>📈 Warbixinta Macallimiinta — Scheme of Work</h2>
-      <label>Macallinka</label>
-      <select id="repTchSel">
-        <option value="__ALL__" ${repTeacherSow==="__ALL__"?"selected":""}>Dhammaan Macallimiinta (Dulmar)</option>
-        ${teachers.map(t=>`<option value="${escapeHtml(t.id)}" ${t.id===repTeacherSow?"selected":""}>${escapeHtml(t.name)}</option>`).join("")}
-      </select>
-      <button class="btn gold" id="btnRepPrint" style="margin-top:10px;">🖨️ Daabac / Deji Warbixinta (PDF)</button>
-    </div>`;
+  // ---------- Reports tab: printable per-evaluation report ----------
+  let reportTeacherId = null;
+  let reportEvalId = null;
 
-    if (repTeacherSow==="__ALL__"){
-      const rows = teachers.map(t=>{
-        const list = withObs(t.id);
-        const latest = list[0];
-        const onTrack = list.filter(o=>o.status==="on_track").length;
-        return { t, n:list.length, latest, pct: list.length?Math.
+  function renderReports(){
+    app.innerHTML = `
+      <div class="card no-print">
+        <h2>Warbixin — Dooro Macallin</h2>
+        ${teachers.length===0 ? `<div class="empty">Wali macallin lama gelin.</div>` : `
+        <label>Macallinka</label>
+        <select id="repTeacherSel">
+          <option value="">— Dooro —</option>
+          ${teachers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(t=>`<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("")}
+        </select>
+        <label>Qiimeynta (taariikhda)</label>
+        <select id="repEvalSel"><option value="">— Dooro macallin marka hore —</option></select>
+        <button class="btn gold no-print" id="printBtn" style="display:none;">🖨️ Daabac Warbixinta</button>
+        `}
+      </div>
+      <div id="reportArea"></div>
+    `;
+    if (teachers.length===0) return;
+
+    const teacherSel = document.getElementById("repTeacherSel");
+    const evalSel = document.getElementById("repEvalSel");
+    const printBtn = document.getElementById("printBtn");
+
+    teacherSel.addEventListener("change", ()=>{
+      reportTeacherId = teacherSel.value;
+      const evs = reportTeacherId ? teacherEvals(reportTeacherId) : [];
+      evalSel.innerHTML = `<option value="">— Dooro taariikh —</option>` + evs.slice().reverse().map(e=>`<option value="${e.id}">${e.date} (${fmt1(Number(e.score))}%)</option>`).join("");
+      document.getElementById("reportArea").innerHTML = "";
+      printBtn.style.display = "none";
+    });
+    evalSel.addEventListener("change", ()=>{
+      reportEvalId = evalSel.value;
+      buildReport();
+    });
+    printBtn.addEventListener("click", ()=> window.print());
+
+    function buildReport(){
+      const area = document.getElementById("reportArea");
+      if (!reportTeacherId || !reportEvalId){ area.innerHTML=""; printBtn.style.display="none"; return; }
+      const t = teachers.find(x=>x.id===reportTeacherId);
+      const evs = teacherEvals(reportTeacherId);
+      const idx = evs.findIndex(e=>e.id===reportEvalId);
+      if (idx===-1){ area.innerHTML=""; return; }
+      const e = evs[idx];
+      const prevEval = idx>0 ? evs[idx-1] : null;
+      const m = e.meta || {};
+      const score = Number(e.score);
+
+      area.innerHTML = `
+        <div class="report-header">
+          <img src="/logo.jpg" alt="logo">
+          <div>
+            <h2 style="margin:0;">${escapeHtml(m.school||"Dugsiga Howlwadaag Sare")}</h2>
+            <div style="font-size:.85rem;color:#555;">Foomka Kormeerka iyo Qiimeynta Macallinka</div>
+          </div>
+        </div>
+        <table>
+          <tr><th>Macallinka</th><td>${escapeHtml(t.name)}</td><th>Maaddada</th><td>${escapeHtml(m.subject||t.subject||"—")}</td></tr>
+          <tr><th>Fasalka</th><td>${escapeHtml(m.class||"—")}</td><th>Taariikhda</th><td>${e.date}</td></tr>
+          <tr><th>Kormeeraha</th><td colspan="3">${escapeHtml(m.supervisorName||"—")}</td></tr>
+        </table>
+
+        <h3>Natiijada Guud: ${fmt1(score)}% — ${overallLevel(score)}</h3>
+
+        <table>
+          <thead><tr><th>#</th><th>Qodobka</th><th>Qiimeynta (1-5)</th><th>Faallo</th></tr></thead>
+          <tbody>
+            ${(e.items||[]).map((it,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(it.title.replace(/^\d+\.\s*/,''))}</td><td style="text-align:center;font-weight:700;">${it.rating}</td><td>${escapeHtml(it.comment||"—")}</td></tr>`).join("")}
+          </tbody>
+        </table>
+
+        ${(m.conclusion||m.strengths||m.improvements||m.recommendations) ? `
+        <h3>Gunaad</h3>
+        ${m.conclusion?`<p>${escapeHtml(m.conclusion)}</p>`:""}
+        ${m.strengths?`<p><b>Waxyaabaha wanaagsan:</b> ${escapeHtml(m.strengths)}</p>`:""}
+        ${m.improvements?`<p><b>U baahan horumarinta:</b> ${escapeHtml(m.improvements)}</p>`:""}
+        ${m.recommendations?`<p><b>Talooyinka Kormeeraha:</b> ${escapeHtml(m.recommendations)}</p>`:""}
+        ` : ""}
+
+        ${prevEval ? `
+        <h3>📊 Isbarbardhigga qodob-qodobka (vs ${prevEval.date})</h3>
+        ${comparisonHtmlPrint(prevEval, e)}
+        ` : `<div class="cmp-summary" style="margin-top:14px;">📌 Kani waa qiimeyntii koowaad ee macallinkan — weli lama isbarbardhigi karo qiimeymo hore.</div>`}
+      `;
+      printBtn.style.display = "inline-block";
+    }
+
+    function comparisonHtmlPrint(prevEval, currEval){
+      const cmp = compareItems(prevEval, currEval);
+      const s = comparisonSummary(cmp);
+      let summaryText;
+      if (s.up > s.down) summaryText = `Guud ahaan macallinku wuxuu sameeyay HORUMAR — ${s.up} qodob kor u kacay, ${s.down} hoos u dhacay, ${s.same} isku mid ahaaday.`;
+      else if (s.down > s.up) summaryText = `Guud ahaan macallinku wuxuu sameeyay HOOS U DHAC — ${s.down} qodob hoos u dhacay, ${s.up} kor u kacay, ${s.same} isku mid ahaaday.`;
+      else summaryText = `Isbeddel weyn lama arag — ${s.up} kor u kacay, ${s.down} hoos u dhacay, ${s.same} isku mid ahaaday.`;
+      const rows = cmp.map(c=>{
+        const note = c.status==="up" ? `Horumar (+${c.delta})` : c.status==="down" ? `Hoos u dhac (${c.delta})` : "Isku mid";
+        return `<tr><td>${escapeHtml(c.title.replace(/^\d+\.\s*/,''))}</td><td style="text-align:center;">${c.prev!==null?c.prev:"—"}</td><td style="text-align:center;">${c.curr!==null?c.curr:"—"}</td><td>${note}</td></tr>`;
+      }).join("");
+      return `<p><b>${summaryText}</b></p><table><thead><tr><th>Qodobka</th><th>Hore</th><th>Hadda</th><th>Isbeddelka</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

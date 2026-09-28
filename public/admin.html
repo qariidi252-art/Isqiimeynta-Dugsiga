@@ -59,12 +59,6 @@
   .compare-note { font-size:.8rem; padding:10px 12px; border-radius:10px; margin-top:10px; }
   .compare-note.ok { background:rgba(30,142,90,.12); color:var(--good); }
   .compare-note.pending { background:rgba(201,138,19,.12); color:var(--warn); }
-  .sow-hint { font-size:.82rem; padding:12px 14px; border-radius:10px; margin-top:12px; border:1px solid var(--border); }
-  .sow-hint.muted { background:var(--surface-2); color:var(--text-dim); }
-  .sow-hint.warn { background:rgba(201,138,19,.12); color:var(--warn); border-color:transparent; }
-  .sow-hint.due { background:rgba(192,57,43,.10); color:var(--text); border-color:transparent; }
-  .sow-hint.ok { background:rgba(30,142,90,.12); color:var(--text); border-color:transparent; }
-  .sow-hint select { margin-top:4px; }
   .del-x { background:none; border:none; color:var(--bad); font-size:1.1rem; cursor:pointer; padding:2px 6px; }
   .loading { text-align:center; padding:40px; color:var(--text-dim); }
   .link-box { display:flex; gap:6px; align-items:center; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:8px 10px; margin-top:8px; font-size:.78rem; word-break:break-all; }
@@ -133,16 +127,6 @@
     if (box) {
       box.style.display = 'block';
       box.textContent = '⚠️ JS ERROR: ' + e.message + '\nLine: ' + e.lineno + ', Col: ' + e.colno + '\nFile: ' + (e.filename||'inline');
-    }
-  });
-  // Errors inside async/await code (failed fetch, rejected promise) don't fire the
-  // 'error' event above — this catches those too, so a blank page always shows why.
-  window.addEventListener('unhandledrejection', function(e){
-    var box = document.getElementById('jsErrorBox');
-    if (box) {
-      box.style.display = 'block';
-      var reason = e.reason && e.reason.message ? e.reason.message : String(e.reason);
-      box.textContent = '⚠️ PROMISE ERROR: ' + reason;
     }
   });
 </script>
@@ -224,39 +208,25 @@
   // ---------- Scheme of Work state ----------
   let sowTopics = [];
   let sowSettings = {};
-  let sowView = "progress"; // progress | search | upload | settings
+  let sowView = "observe"; // observe | tReport | progress | search | upload | settings
   let sowSubject = null;
   let sowClass = null;
   let sowSearchSubject = null;
   let sowSearchSelectedTopicId = null;
+  let sowObservations = [];
+  let obsTeacher = null, obsSubject = null, obsClass = null, obsSection = null;
+  let obsBoard = "", obsNote = "", obsPick = null, obsLastId = null;
+  let repTeacherSow = "__ALL__";
 
   const app = document.getElementById("app");
   const PW_KEY = "qm_admin_pw";
 
   function getPw(){ return localStorage.getItem(PW_KEY) || ""; }
 
-  // Plain fetch() never times out on a bad connection — it just hangs forever, which
-  // is what made the page look permanently blank/stuck. This aborts after 12s and
-  // throws a clear error instead, so the person always sees a message and a retry.
-  async function fetchWithTimeout(path, opts, ms){
-    ms = ms || 12000;
-    const controller = new AbortController();
-    const timer = setTimeout(()=>controller.abort(), ms);
-    try {
-      opts = Object.assign({}, opts || {}, { signal: controller.signal });
-      return await fetch(path, opts);
-    } catch(e){
-      if (e.name === "AbortError") throw new Error("Khalad xidhiidh (timeout) — internetka ayaa daciifsan ama server-ku wuu raagay.");
-      throw e;
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
   async function api(path, opts){
     opts = opts || {};
     opts.headers = Object.assign({ "Content-Type":"application/json", "x-admin-password": getPw() }, opts.headers||{});
-    const res = await fetchWithTimeout(path, opts);
+    const res = await fetch(path, opts);
     if (res.status === 401){ showLogin("Sirta waa qalad, fadlan isku day mar kale."); throw new Error("unauthorized"); }
     if (!res.ok){ const j = await res.json().catch(()=>({})); throw new Error(j.error||"server error"); }
     return res.status === 204 ? null : res.json();
@@ -274,14 +244,12 @@
 
   document.getElementById("loginBtn").addEventListener("click", async ()=>{
     const pw = document.getElementById("pwInput").value;
-    const btn = document.getElementById("loginBtn"); btn.disabled = true; btn.textContent = "Sugaya...";
     try {
-      const res = await fetchWithTimeout("/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password: pw}) });
+      const res = await fetch("/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password: pw}) });
       const j = await res.json();
       if (j.ok){ localStorage.setItem(PW_KEY, pw); showApp(); loadAll(); }
       else document.getElementById("loginErr").textContent = "Sirta waa qalad.";
-    } catch(e){ document.getElementById("loginErr").textContent = "Khalad server ah: " + e.message; }
-    finally { btn.disabled = false; btn.textContent = "Gal"; }
+    } catch(e){ document.getElementById("loginErr").textContent = "Khalad server ah."; }
   });
   document.getElementById("pwInput").addEventListener("keydown", e=>{ if (e.key==="Enter") document.getElementById("loginBtn").click(); });
 
@@ -304,18 +272,14 @@
       subjectCatalog = subjRows.map(s=>({ key: s.id, title: s.title }));
       sowTopics = await api("/api/sow/topics");
       sowSettings = await api("/api/sow/settings");
+      sowObservations = await api("/api/sow/observations");
       render();
-    } catch(e) {
-      console.error(e);
-      if (app) app.innerHTML = `<div class="card"><div class="empty">⚠️ Khalad ayaa dhacay markii xogta la soo dejinayay: ${escapeHtml(e.message||"")}</div><button class="btn" id="retryLoadBtn" style="display:block;margin:12px auto 0;">🔄 Isku day mar kale</button></div>`;
-      const retryBtn = document.getElementById("retryLoadBtn");
-      if (retryBtn) retryBtn.addEventListener("click", loadAll);
-    }
+    } catch(e){ console.error(e); }
   }
 
   function logout(){
     localStorage.removeItem(PW_KEY);
-    teachers = []; evaluations = []; students = []; subjectCatalog = []; sowTopics = []; sowSettings = {}; currentTeacherId = null; activeTab = "dashboard";
+    teachers = []; evaluations = []; students = []; subjectCatalog = []; sowTopics = []; sowSettings = {}; sowObservations = []; currentTeacherId = null; activeTab = "dashboard";
     document.querySelectorAll("nav.tabs button[data-tab]").forEach(b=>b.classList.remove("active"));
     document.querySelector('nav.tabs button[data-tab="dashboard"]').classList.add("active");
     showLogin();
@@ -326,10 +290,10 @@
     const pw = getPw();
     if (!pw){ showLogin(); return; }
     try {
-      const res = await fetchWithTimeout("/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password: pw}) });
+      const res = await fetch("/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password: pw}) });
       const j = await res.json();
       if (j.ok){ showApp(); loadAll(); } else showLogin();
-    } catch(e){ showLogin("Khalad xidhiidh server ah — fadlan hubi internetka oo isku day mar kale. (" + e.message + ")"); }
+    } catch(e){ showLogin("Khalad xidhiidh server ah."); }
   }
 
   function fmt1(n){ return (Math.round(n*10)/10).toFixed(1); }
@@ -341,13 +305,6 @@
     return "U Baahan Taageero Degdeg ah";
   }
   function scoreBadgeClass(pct){ if (pct>=70) return "good"; if (pct>=50) return "warn"; return "bad"; }
-  function sowStatusLabel(status){
-    if (status==="on_track") return "✅ SOW:";
-    if (status==="behind") return "⚠️ SOW (ka danbeeyay):";
-    if (status==="ahead") return "➡️ SOW (ka hormaray):";
-    if (status==="unrecognized") return "❓ SOW:";
-    return "📘 SOW:";
-  }
   function teacherEvals(id){ return evaluations.filter(e=>e.teacher_id===id).sort((a,b)=>new Date(a.date)-new Date(b.date)); }
   function teacherLatestScore(id){ const e=teacherEvals(id); return e.length? Number(e[e.length-1].score) : null; }
   function teacherOverallScore(id){ const e=teacherEvals(id); if(!e.length) return null; return e.reduce((a,x)=>a+Number(x.score),0)/e.length; }
@@ -432,99 +389,6 @@
     const diffDays = Math.floor((new Date() - start)/86400000);
     if (diffDays < 0) return 0;
     return Math.floor(diffDays/7)+1;
-  }
-  // Same as currentWeekNo() but for an arbitrary date (e.g. the evaluation's visit date,
-  // which may not be "today" if the supervisor is logging a past classroom visit).
-  function weekNoForDate(dateStr){
-    const startRaw = sowSettings.term_start_date;
-    if (!startRaw || !dateStr) return null;
-    const start = new Date(startRaw+"T00:00:00");
-    const d = new Date(dateStr+"T00:00:00");
-    if (isNaN(start.getTime()) || isNaN(d.getTime())) return null;
-    const diffDays = Math.floor((d - start)/86400000);
-    if (diffDays < 0) return 0;
-    return Math.floor(diffDays/7)+1;
-  }
-  // Given the topics of one subject+class, work out which topic the Scheme of Work
-  // says should have been reached by a given week (the last topic whose week number
-  // is <= that week). This is the "casharka la sugayo" a supervisor compares against
-  // what's written on the board.
-  function sowExpectedTopic(topics, weekNo){
-    if (!topics.length || weekNo == null) return null;
-    const due = topics.filter(t=>t.week_no!=null && t.week_no<=weekNo);
-    if (due.length) return due[due.length-1];
-    // No week numbers set on any topic: fall back to the first not-yet-done topic.
-    if (topics.every(t=>t.week_no==null)) return topics.find(t=>!t.done) || topics[0];
-    return null;
-  }
-
-  // ---- Automatic matching: the supervisor types the topic they see written on the
-  // board, and this finds which SOW entry (if any) it corresponds to, so the system
-  // can work out on its own whether the class is on schedule, behind, or ahead.
-  function normalizeSowText(s){
-    return String(s||"")
-      .toLowerCase()
-      .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^\p{L}\p{N}\s]/gu, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-  function sowTextSimilarity(a, b){
-    const na = normalizeSowText(a), nb = normalizeSowText(b);
-    if (!na || !nb) return 0;
-    if (na === nb) return 1;
-    if (na.includes(nb) || nb.includes(na)) return 0.85;
-    const wa = new Set(na.split(" ").filter(w=>w.length>2));
-    const wb = new Set(nb.split(" ").filter(w=>w.length>2));
-    if (!wa.size || !wb.size) return 0;
-    let inter = 0;
-    wa.forEach(w=>{ if (wb.has(w)) inter++; });
-    const union = new Set([...wa, ...wb]).size;
-    return union ? inter/union : 0;
-  }
-  // Returns the SOW topic that best matches free-typed board text, or null if nothing
-  // is confident enough to call a match (below ~1/3 word overlap).
-  function bestSowMatch(topics, boardText){
-    if (!boardText || !boardText.trim() || !topics.length) return null;
-    let best = null, bestScore = 0;
-    topics.forEach(t=>{
-      const score = sowTextSimilarity(t.topic, boardText);
-      if (score > bestScore){ bestScore = score; best = t; }
-    });
-    if (!best || bestScore < 0.34) return null;
-    return best;
-  }
-  // Compares the matched board topic against the topic due this week and classifies
-  // the class as on_track / behind / ahead, with how many weeks/topics off it is.
-  function sowStatusFor(topics, matched, expected, weekNo){
-    if (!matched) return { status: "unrecognized", diff: 0 };
-    if (matched.week_no != null && expected && expected.week_no != null){
-      const diff = expected.week_no - matched.week_no;
-      if (diff === 0) return { status: "on_track", diff: 0 };
-      if (diff > 0) return { status: "behind", diff };
-      return { status: "ahead", diff: Math.abs(weekNo != null ? Math.min(-diff, matched.week_no - weekNo) : -diff) };
-    }
-    // No week numbers to compare — fall back to position in the ordered topic list.
-    const idxMatched = topics.findIndex(t=>t.id===matched.id);
-    const idxExpected = expected ? topics.findIndex(t=>t.id===expected.id) : -1;
-    if (idxExpected === -1 || idxMatched === idxExpected) return { status: "on_track", diff: 0 };
-    return { status: idxMatched < idxExpected ? "behind" : "ahead", diff: Math.abs(idxExpected - idxMatched) };
-  }
-  // Turns the status into plain-language guidance for the teacher/report — this is
-  // frozen into the saved evaluation so the advice reads correctly even if the SOW
-  // changes later.
-  function sowAdviceText(status, diff, subjectTitle, matchedTopic, expectedTopic){
-    const wk = diff===1 ? "1 toddobaad" : `${diff} toddobaad`;
-    if (status === "on_track"){
-      return `✅ Macallinku wuxuu si sax ah ula socdaa Scheme of Work-ka ${subjectTitle?`ee ${subjectTitle}`:""} — casharka sabuuradda ku qoran (“${matchedTopic}”) waa kii toddobaadkan la sugayay. Talo: sii wad qorshaha sida uu yahay, oo hubi in ardaydu si buuxda u fahmaan casharka ka hor inta aan lagu sii gudbin mid cusub.`;
-    }
-    if (status === "behind"){
-      return `⚠️ Macallinku wuxuu ka danbeeyaa jadwalka SOW-ga ${wk} — sabuuradda waxaa ku qoran “${matchedTopic}”, halka casharka la sugayay uu yahay “${expectedTopic||"—"}”. Talooyin: (1) samee qorshe degdeg ah oo lagu soo celiyo waqtiga la waayey, sida fasallo dheeraad ah ama xawaare kordhinta casharrada soo socda; (2) baar sababta hadhaaga — fahan darro ardayd mise waqti la'aan; (3) la hadal madaxa qeybta si loo taageero oo loo dejiyo taariikh cusub oo la gaadhi karo.`;
-    }
-    if (status === "ahead"){
-      return `➡️ Macallinku wuxuu ka sii horreeyaa jadwalka SOW-ga ${wk} — sabuuradda waxaa ku qoran “${matchedTopic}”, halka casharka la sugayay uu yahay “${expectedTopic||"—"}”. Talooyin: (1) hubi in ardaydu si buuxda u fahmeen casharrada la dhaafay ka hor inta aan sii socon; (2) hubi in xawaaraha uusan u dhicin faahfaahin muhiim ah; (3) haddii tani tahay qorshe ula kac ah, waa fiican tahay — u isticmaal waqtiga dheeraadka ah dib u eegis iyo xoojin.`;
-    }
-    return `❓ Cinwaanka sabuuradda ku qoran lama garan karin inuu ka mid yahay Scheme of Work-ka ${subjectTitle?`ee ${subjectTitle}`:""} ee fasalkan. Talo: hubi in cinwaanka si sax ah loo qoray, ama in Scheme of Work-ka maadadan/fasalkan si buuxda loo geliyay (tab-ka 📘 Scheme of Work).`;
   }
   function parseSowRows(raw){
     const lines = raw.split("\n").map(l=>l.replace(/\r$/,"")).filter(l=>l.trim());
@@ -858,7 +722,6 @@
               <span style="display:flex;align-items:center;gap:6px;"><span class="badge ${scoreBadgeClass(Number(e.score))}">${fmt1(Number(e.score))}%</span><button class="del-x" data-delev="${e.id}">✕</button></span>
             </div>
             <div class="notes-txt">${overallLevel(Number(e.score))}${meta.supervisorName?` · Kormeere: ${escapeHtml(meta.supervisorName)}`:""}</div>
-            ${meta.sowAdvice ? `<div class="notes-txt">${sowStatusLabel(meta.sowStatus)} ${escapeHtml(meta.sowAdvice)}</div>` : (meta.sowTopic ? `<div class="notes-txt">📘 SOW ee la sugayay: ${escapeHtml(meta.sowTopic)}${meta.sowWeek?` (W${escapeHtml(String(meta.sowWeek))})`:""}</div>` : "")}
             ${meta.conclusion || meta.strengths || meta.improvements || meta.recommendations ? `<div class="notes-txt">📝 <a href="#" data-viewdetail="${e.id}" style="color:var(--accent);">Arag Gunaadka</a></div>` : ""}
             ${prevEval ? `<details><summary>📊 Isbarbardhigga qodob-qodobka (vs ${prevEval.date})</summary>${comparisonHtml(prevEval, e)}</details>` : ""}
           </div>`;
@@ -1320,6 +1183,8 @@
   function renderSow(){
     app.innerHTML = `
       <div class="subview-tabs no-print">
+        <button data-sowv="observe" class="${sowView==="observe"?"active":""}">🚶 Kormeer Fasal</button>
+        <button data-sowv="tReport" class="${sowView==="tReport"?"active":""}">📈 Warbixinta Macallimiinta</button>
         <button data-sowv="progress" class="${sowView==="progress"?"active":""}">📊 Xaaladda Casharada</button>
         <button data-sowv="search" class="${sowView==="search"?"active":""}">🔎 Xulo Cashaarka</button>
         <button data-sowv="upload" class="${sowView==="upload"?"active":""}">📤 Soo Deji Scheme</button>
@@ -1331,7 +1196,9 @@
       b.addEventListener("click", ()=>{ sowView = b.dataset.sowv; render(); });
     });
     const body = document.getElementById("sowBody");
-    if (sowView==="search") renderSowSearch(body);
+    if (sowView==="observe") renderSowObserve(body);
+    else if (sowView==="tReport") renderSowTeacherReport(body);
+    else if (sowView==="search") renderSowSearch(body);
     else if (sowView==="upload") renderSowUpload(body);
     else if (sowView==="settings") renderSowSettings(body);
     else renderSowProgress(body);
@@ -1426,317 +1293,411 @@
     });
   }
 
-  function renderSowSearch(body){
-    if (!subjectCatalog.length){
-      body.innerHTML = `<div class="card"><div class="empty">Marka hore ku dar maado (tab-ka Ardayda → 🎓 Maadooyinka Dugsiga).</div></div>`;
-      return;
+  // ---------- Classroom observation vs Scheme of Work ----------
+  const SOW_STOP = new Set(["the","of","and","in","to","a","an","on","for","with","by","from","at","as","is","are","its","p","page","pages","chapter","week","unit","topic","lesson","iyo","ee","ka","ku","oo","la","ah","waa","cashar","cutubka"]);
+  const SOW_MONTHS = new Set(["january","february","march","april","may","june","july","august","september","october","november","december"]);
+  function sowClean(s){
+    return String(s||"")
+      .replace(/^\s*\d{1,2}\s+[A-Za-z]+\s*[–-]\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}\s*\d*\s*/, "")
+      .replace(/^\s*\d{1,2}\s*[–-]\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}\s*\d*\s*/, "")
+      .trim();
+  }
+  function sowTokens(s){
+    const t = String(s||"").toLowerCase().replace(/[^a-z\u0600-\u06FF]+/g," ").split(" ")
+      .filter(w=>w.length>1 && !SOW_STOP.has(w) && !SOW_MONTHS.has(w));
+    // common abbreviation: SHM = simple harmonic motion
+    if (t.includes("shm")) ["simple","harmonic","motion"].forEach(w=>{ if (!t.includes(w)) t.push(w); });
+    else if (t.includes("simple") && t.includes("harmonic")) t.push("shm");
+    return t;
+  }
+  function sowTokMatch(a,b){ return a===b || (a.length>=5 && b.length>=5 && a.slice(0,5)===b.slice(0,5)); }
+  function sowScore(board, topic){
+    const nb = String(board||"").toLowerCase().replace(/[^a-z0-9\u0600-\u06FF]+/g," ").trim();
+    const nt = String(topic||"").toLowerCase().replace(/[^a-z0-9\u0600-\u06FF]+/g," ").trim();
+    if (nb.length>=6 && nt.includes(nb)) return 1;
+    const bt = sowTokens(board), tt = sowTokens(topic);
+    if (!bt.length || !tt.length) return 0;
+    let inter = 0;
+    bt.forEach(b=>{ if (tt.some(t=>sowTokMatch(b,t))) inter++; });
+    const containment = inter/bt.length;
+    const dice = 2*inter/(bt.length+tt.length);
+    return Math.max(containment*0.9, dice);
+  }
+  function sowRank(topics, board){
+    return topics.map(t=>({t, score: sowScore(board, t.topic)})).filter(x=>x.score>=0.25).sort((a,b)=>b.score-a.score);
+  }
+  function sowChoose(ranked){
+    if (obsPick === "__none__") return { matched:null };
+    if (obsPick){
+      const f = ranked.find(r=>r.t.id===obsPick);
+      const t = f ? f.t : sowTopics.find(x=>x.id===obsPick);
+      return { matched: t||null, score: f?f.score:0 };
     }
-    const classes = studentClasses().length ? studentClasses() : ["Form 4"];
-    if (!sowSearchSubject || !subjectCatalog.some(s=>s.key===sowSearchSubject)) sowSearchSubject = subjectCatalog[0].key;
-    const cls = classes.length===1 ? classes[0] : (sowClass && classes.includes(sowClass) ? sowClass : classes[0]);
-    const subjTitle = (subjectCatalog.find(s=>s.key===sowSearchSubject)||{}).title || "";
-    const topics = sowTopicsFor(sowSearchSubject, cls);
-    if (sowSearchSelectedTopicId && !topics.some(t=>t.id===sowSearchSelectedTopicId)) sowSearchSelectedTopicId = null;
-
-    body.innerHTML = `
-      <div class="card">
-        <h2>🔎 Xulo Cashaarka — Hel Xaaladdiisa Scheme of Work-ka</h2>
-        <label>Maadada</label>
-        <select id="sowSearchSubjectSel">${subjectCatalog.map(s=>`<option value="${escapeHtml(s.key)}" ${s.key===sowSearchSubject?"selected":""}>${escapeHtml(s.title)}</option>`).join("")}</select>
-        ${classes.length>1 ? `<label>Fasalka</label><select id="sowSearchClassSel">${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===cls?"selected":""}>${escapeHtml(c)}</option>`).join("")}</select>` : ""}
-        <label>Cinwaanka Cashaarka</label>
-        ${topics.length===0 ? `<div class="empty">Wali lama gelin Scheme of Work-ka "${escapeHtml(subjTitle)}" — ${escapeHtml(cls)}. Tag "📤 Soo Deji Scheme" si aad u soo geliso.</div>` : `
-        <select id="sowSearchSelect">
-          <option value="">— Dooro cinwaanka casharka —</option>
-          ${topics.map(t=>`<option value="${t.id}" ${t.id===sowSearchSelectedTopicId?"selected":""}>${t.week_no!=null?`W${t.week_no} — `:""}${escapeHtml(t.topic)}${t.done?" ✓":""}</option>`).join("")}
-        </select>
-        `}
-      </div>
-      <div id="sowSearchReport"></div>
-    `;
-    document.getElementById("sowSearchSubjectSel").addEventListener("change",(e)=>{ sowSearchSubject=e.target.value; sowSearchSelectedTopicId=null; render(); });
-    const clsSel = document.getElementById("sowSearchClassSel");
-    if (clsSel) clsSel.addEventListener("change",(e)=>{ sowClass=e.target.value; sowSearchSelectedTopicId=null; render(); });
-    const topicSel = document.getElementById("sowSearchSelect");
-    if (topicSel) topicSel.addEventListener("change",(e)=>{ sowSearchSelectedTopicId = e.target.value || null; renderReport(); });
-
-    function renderReport(){
-      const area = document.getElementById("sowSearchReport");
-      const t = sowSearchSelectedTopicId ? sowTopics.find(x=>x.id===sowSearchSelectedTopicId) : null;
-      if (!t){ area.innerHTML = ""; return; }
-      const week = currentWeekNo();
-      const today = new Date().toLocaleDateString();
-      let statusRow, statusNote;
-      if (week==null){
-        statusRow = `— Lama Xisaabin Karo`;
-        statusNote = `<p style="font-size:.85rem;"><i>Wali lama dejin taariikhda bilowga semester-ka (tag "⚙️ Dejinta Semester-ka").</i></p>`;
-      } else if (t.week_no==null){
-        statusRow = `— Toddobaad Lama Qorin`;
-        statusNote = `<p style="font-size:.85rem;"><i>Casharkan lama qorin toddobaadkiisa Scheme of Work-ka.</i></p>`;
-      } else if (t.done){
-        statusRow = `<span class="yes">✓ Macalinku Wuu Dhammeeyay</span>`;
-        statusNote = "";
-      } else if (t.week_no <= week){
-        const behind = week - t.week_no;
-        statusRow = `<span class="no">⚠️ Dib U Dhacay (${behind} Toddobaad)</span>`;
-        statusNote = `<p style="font-size:.85rem;"><b style="color:#c0392b;">⚠️ Macalinku weli ma dhammaynin casharkan.</b> Target-ka Scheme of Work-ku wuxuu ahaa in la dhammeeyo Toddobaad ${t.week_no}, hadda waxaan ku jirnaa Toddobaad ${week}.</p>`;
-      } else {
-        statusRow = `🕒 Weli Lama Gaadhin`;
-        statusNote = `<p style="font-size:.85rem;"><b style="color:#1e8e5a;">🕒 Weli lama gaadhin casharkan</b> — waad la socotaa jadwalka.</p>`;
+    if (!ranked.length) return { matched:null };
+    if (ranked[0].score>=0.5 && (ranked.length===1 || ranked[0].score-ranked[1].score>=0.08)) return { matched:ranked[0].t, score:ranked[0].score };
+    return { pending:true };
+  }
+  function sowStatusInfo(status, diff){
+    if (status==="on_track") return { label:"La Socda Jadwalka", cls:"good" };
+    if (status==="behind"){
+      const d = Math.abs(diff||0);
+      return { label:"Ka Dib Yahay "+d+" Toddobaad", cls: d>=2 ? "bad" : "warn" };
+    }
+    if (status==="ahead"){
+      const d = Math.abs(diff||0);
+      return { label:"Ka Hor Yahay "+d+" Toddobaad", cls: d>=2 ? "warn" : "good" };
+    }
+    if (status==="off_scheme") return { label:"Ma Waafaqsana Scheme-ka", cls:"bad" };
+    return { label:"Lama Xisaabin Karo", cls:"neutral" };
+  }
+  function sowAdvice(status, c){
+    const out = [];
+    const list = (arr)=>arr.slice(0,5).join("; ") + (arr.length>5 ? " iyo kuwo kale" : "");
+    const exp = c.expectedNow && c.expectedNow.length ? "Casharka Scheme-ku ka rabo toddobaadkan: " + list(c.expectedNow) + "." : "";
+    if (status==="on_track"){
+      out.push({k:"ok", t:'Macalinku wuu la socdaa Scheme of Work-ka. Casharka sabuuradda ku qoran ("'+c.matched+'") wuxuu ku qorsheysnaa Toddobaadka '+c.planned+', hadda waxaan ku jirnaa Toddobaadka '+c.week+'.'});
+      out.push({k:"tip", t:"Sii wad xawaaraha hadda jira; hubi in casharkasta uu gaadho ujeedooyinkiisa (learning objectives) ka hor inta aan la gudbin."});
+      if (c.next && c.next.length) out.push({k:"tip", t:"U diyaargarow casharada soo socda: "+list(c.next)+"."});
+      out.push({k:"tip", t:"Ku dar qiimeyn gaaban (su'aalo dhamaadka casharka ah ama quiz) si loo hubiyo fahamka ardayda."});
+      out.push({k:"tip", t:"Diiwaangeli casharada la dhammeeyay si isla-xisaabtan joogto ah loo sameeyo."});
+    } else if (status==="behind"){
+      out.push({k:"warn", t:'Macalinku wuu ka dib yahay Scheme of Work-ka '+c.diff+' toddobaad. Casharka sabuuradda ku qoran ("'+c.matched+'") wuxuu ku qorsheysnaa Toddobaadka '+c.planned+', halka hadda la joogo Toddobaadka '+c.week+'.'});
+      if (exp) out.push({k:"sum", t:exp});
+      if (c.owed && c.owed.length) out.push({k:"warn", t:"Casharada ay ku dhiman yihiin ("+c.owed.length+"): "+list(c.owed)+"."});
+      out.push({k:"tip", t:"Samee qorshe dabbaal ah (catch-up plan) oo qoran: u qaybi casharada hadhay toddobaadyada soo socda oo la wadaag kormeeraha."});
+      out.push({k:"tip", t:"Isku dar casharada isku dhow ee isku mawduuca ah, adigoo ilaalinaya ujeedooyinka ugu muhiimsan ee manhajka."});
+      out.push({k:"tip", t:"Weydiiso saacado dheeri ah (xiisado) toddobaadkii mid ama laba jeer, ama isticmaal wakhtiga fasal-dhaafka ee la ogolyahay."});
+      out.push({k:"tip", t:"Mudnaan sii casharada muhiimka u ah imtixaanka; kuwa yar-yarna ku dabool shaqo guri iyo akhris madax-bannaan."});
+      out.push({k:"tip", t:"Yaree wakhtiga lumaya: bilow casharka wakhtigiisa, diyaari qalabka horay, oo isticmaal tababar kooxeed."});
+      if (c.diff>=3) out.push({k:"warn", t:"Dib u dhacu waa weyn yahay — la kulan kormeeraha/madaxa qaybta muddo 1 toddobaad gudaheed, oo dib u eeg horumarka toddobaad ka dib."});
+      else out.push({k:"tip", t:"Dib u eeg horumarka kormeer kale toddobaadka soo socda."});
+    } else if (status==="ahead"){
+      out.push({k:"sum", t:'Macalinku wuu ka horreeyaa Scheme of Work-ka '+c.diff+' toddobaad. Casharka sabuuradda ku qoran ("'+c.matched+'") wuxuu ku qorsheysnaa Toddobaadka '+c.planned+', halka hadda la joogo Toddobaadka '+c.week+'.'});
+      if (exp) out.push({k:"sum", t:exp});
+      if (c.skipped && c.skipped.length) out.push({k:"warn", t:"Hubi in casharada u dhexeeya aan la dhaafin ("+c.skipped.length+"): "+list(c.skipped)+"."});
+      out.push({k:"tip", t:"Hubi in ardaydu si buuxda u fahmeen casharada horay loo dhigay ka hor inta aan la sii socon (su'aalo gaaban, shaqo guri, imtixaan yar)."});
+      out.push({k:"tip", t:"Isticmaal wakhtiga dheeriga ah dib-u-eegis, layliyo dheeraad ah, iyo su'aalo imtixaannadii hore."});
+      out.push({k:"tip", t:"Ha dhaafin qaybaha wax-ku-ool ah (practicals) iyo qiimeynta joogtada ah ee Scheme-ka ku qoran."});
+      out.push({k:"tip", t:"Haddii xawaarahan uu habboon yahay, la wadaag kormeeraha si Scheme-ka loo cusboonaysiiyo."});
+    } else if (status==="off_scheme"){
+      out.push({k:"warn", t:'Cinwaanka sabuuradda ku qoran ("'+c.board+'") lama helin Scheme of Work-ka maadadan iyo fasalkan.'});
+      if (exp) out.push({k:"sum", t:exp});
+      out.push({k:"tip", t:"Weydii macalinka sababta: dib-u-eegis, casharka oo la bedelay, cinwaan si kale loo qoray, ama wax ka baxsan manhajka?"});
+      out.push({k:"tip", t:"Haddii ay tahay dib-u-eegis ama casharkii la qorsheeyay, ha lagu diiwaangeliyo Scheme-ka."});
+      out.push({k:"tip", t:"Weydii macalinka inuu soo bandhigo diyaarinta casharka (lesson plan) iyo Scheme-kiisa si loo hubiyo waafaqsanaanta."});
+      out.push({k:"tip", t:"Haddii cinwaanku sax yahay laakiin Scheme-ka ma jiro, la socodsii in Scheme-ka la cusboonaysiiyo."});
+    } else {
+      if (c.week==null) out.push({k:"warn", t:'Taariikhda bilowga semester-ka lama dejin, sidaas darteed lama xisaabin karo in macalinku dib dhacsan yahay iyo in kale. Tag "⚙️ Dejinta Semester-ka".'});
+      else out.push({k:"warn", t:'Casharka "'+c.matched+'" lama qorin toddobaadkiisa Scheme-ka, ee lama xisaabin karo dib u dhaca.'});
+    }
+    return out;
+  }
+  function sowAnalyze(topics, matched, week, board){
+    const total = topics.length;
+    const d = { total, label:"", cls:"neutral" };
+    const dueCount = week!=null ? topics.filter(t=>t.week_no!=null && t.week_no<=week).length : null;
+    d.expectedPct = (dueCount!=null && total) ? Math.round(dueCount/total*100) : null;
+    let expectedNow = [];
+    if (week!=null){
+      expectedNow = topics.filter(t=>t.week_no===week).map(t=>sowClean(t.topic));
+      if (!expectedNow.length){
+        const past = topics.filter(t=>t.week_no!=null && t.week_no<week).sort((a,b)=>b.week_no-a.week_no)[0];
+        if (past) expectedNow = [sowClean(past.topic)];
       }
-      area.innerHTML = `
-        <div class="card no-print">
-          <button class="btn gold" id="printSowSearchBtn">🖨️ Daabac / Deji Warbixinta Rasmiga ah (PDF)</button>
-        </div>
-        <div id="reportArea">
-          <div class="report-header">
-            <img src="/logo.jpg" alt="logo">
-            <div>
-              <h2 style="margin:0;">Dugsiga Howlwadaag Sare</h2>
-              <div style="font-size:.85rem;color:#555;">Warbixinta Rasmiga ah — Cashar Gaar ah — ${escapeHtml(subjTitle)} (${escapeHtml(cls)})</div>
-            </div>
-          </div>
-          <p style="font-size:.85rem;">Taariikhda Warbixinta: <b>${today}</b></p>
-          <table>
-            <tbody>
-              <tr><th style="width:35%;">Cinwaanka Cashaarka</th><td>${escapeHtml(t.topic)}</td></tr>
-              <tr><th>Toddobaadka la Qorsheeyay (Target)</th><td>${t.week_no!=null?t.week_no:"Lama qorin"}</td></tr>
-              <tr><th>Toddobaadka Hadda ee Semester-ka</th><td>${week!=null?week:"Lama dejin"}</td></tr>
-              <tr><th>Xaalada</th><td>${statusRow}</td></tr>
-            </tbody>
-          </table>
-          ${statusNote}
-        </div>
-        <div class="card no-print" style="margin-top:12px;">
-          <button class="subj-chip ${t.done?'sel':''}" id="btnSowSearchToggle">${t.done?'✕ Ka Saar Calaamadda':'💾 Kaydi — Macalinku Wuu Dhammeeyay'}</button>
-        </div>
-      `;
-      document.getElementById("printSowSearchBtn").addEventListener("click", ()=>window.print());
-      document.getElementById("btnSowSearchToggle").addEventListener("click", async ()=>{
-        const btn = document.getElementById("btnSowSearchToggle"); btn.disabled=true;
-        try { await toggleSowTopic(t.id, !t.done); } finally { btn.disabled=false; }
-      });
     }
-    if (sowSearchSelectedTopicId) renderReport();
+    d.expectedNow = expectedNow;
+    let status = "unknown", diff = null, planned = null;
+    const cleanMatched = matched ? sowClean(matched.topic) : "";
+    if (!matched){ status = "off_scheme"; }
+    else {
+      const idx = topics.findIndex(t=>t.id===matched.id);
+      d.positionPct = (idx>=0 && total) ? Math.round((idx+1)/total*100) : null;
+      d.next = topics.slice(idx+1, idx+4).map(t=>sowClean(t.topic));
+      planned = matched.week_no;
+      if (week!=null && planned!=null){
+        diff = week - planned;
+        status = diff===0 ? "on_track" : (diff>0 ? "behind" : "ahead");
+        if (status==="behind") d.owed = topics.filter(t=>t.week_no!=null && t.week_no>planned && t.week_no<=week && !t.done).map(t=>sowClean(t.topic));
+        if (status==="ahead") d.skipped = topics.filter(t=>t.week_no!=null && t.week_no>=week && t.week_no<planned && !t.done).map(t=>sowClean(t.topic));
+      }
+    }
+    const info = sowStatusInfo(status, diff);
+    d.label = info.label; d.cls = info.cls;
+    const advice = sowAdvice(status, {
+      matched: cleanMatched, board, planned, week, diff: diff==null?0:Math.abs(diff),
+      owed: d.owed, skipped: d.skipped, next: d.next, expectedNow
+    });
+    return { status, diff, planned, week, matchedTitle: cleanMatched, detail:d, advice };
+  }
+  function sowGuessSubject(teacher){
+    const s = String((teacher && teacher.subject) || "").toLowerCase().trim();
+    if (!s) return null;
+    const f = subjectCatalog.find(x=>{ const t = x.title.toLowerCase(); return s.includes(t) || t.includes(s); });
+    return f ? f.key : null;
+  }
+  function sowColor(cls){ return cls==="good" ? "#1e8e5a" : cls==="warn" ? "#c98a13" : cls==="bad" ? "#c0392b" : "#555"; }
+  function sowAdviceHtml(list){
+    if (!list || !list.length) return "";
+    const icon = { ok:"✅", warn:"⚠️", tip:"💡", sum:"📖" };
+    return list.map(a=>`<div style="padding:6px 0;font-size:.85rem;border-bottom:1px dashed #ddd;${a.k==="warn"?"color:#c0392b;":a.k==="ok"?"color:#1e8e5a;":""}">${icon[a.k]||"•"} ${escapeHtml(a.t)}</div>`).join("");
+  }
+  function sowTrendAdvice(list){
+    const out = [];
+    if (list.length>=2){
+      const a = list[0], b = list[1];
+      if (a.diff_weeks!=null && b.diff_weeks!=null){
+        if (a.diff_weeks>0 && a.diff_weeks<b.diff_weeks) out.push({k:"ok", t:"Horumar: dib u dhacu wuu yaraaday marka loo eego kormeerkii hore ("+b.diff_weeks+" → "+a.diff_weeks+" toddobaad). Sii wad dadaalkan."});
+        else if (a.diff_weeks>0 && a.diff_weeks>b.diff_weeks) out.push({k:"warn", t:"Dib u dhacu wuu kordhay marka loo eego kormeerkii hore ("+b.diff_weeks+" → "+a.diff_weeks+" toddobaad). Baaris sababaha oo qorshe dabbaal ah samee."});
+      }
+    }
+    let run = 0;
+    for (const o of list){ if (o.status==="behind") run++; else break; }
+    if (run>=2) out.push({k:"warn", t:"Dib u dhacu wuxuu soo noqnoqday "+run+" kormeer oo isku xig ah — u baahan taageero gaar ah iyo la socod dhow."});
+    const offRun = list.filter(o=>o.status==="off_scheme").length;
+    if (list.length>=3 && offRun>=2) out.push({k:"warn", t:"Marar badan ayaa cinwaanka sabuuradda lagu arkay mid aan Scheme-ka ku jirin ("+offRun+"/"+list.length+") — u baahan hubin ku saabsan sida Scheme-ka loo raacayo."});
+    return out;
+  }
+  function obsReportHtml(o){
+    const tch = teachers.find(x=>x.id===o.teacher_id) || {name:"—", subject:""};
+    const subj = (subjectCatalog.find(s=>s.key===o.subject_key)||{}).title || o.subject_key;
+    const d = o.detail || {};
+    const col = sowColor(d.cls);
+    return `<div id="reportArea">
+      <div class="report-header">
+        <img src="/logo.jpg" alt="logo">
+        <div>
+          <h2 style="margin:0;">Dugsiga Howlwadaag Sare</h2>
+          <div style="font-size:.85rem;color:#555;">Warbixinta Kormeerka Fasalka — Waafaqsanaanta Scheme of Work</div>
+        </div>
+      </div>
+      <table>
+        <tbody>
+          <tr><th style="width:38%;">Macallinka</th><td>${escapeHtml(tch.name)}</td></tr>
+          <tr><th>Maadada</th><td>${escapeHtml(subj)}</td></tr>
+          <tr><th>Fasalka / Qaybta</th><td>${escapeHtml(o.class_name)}${o.section?" ("+escapeHtml(o.section)+")":""}</td></tr>
+          <tr><th>Taariikhda Kormeerka</th><td>${new Date(o.observed_at).toLocaleString()}</td></tr>
+          <tr><th>Cinwaanka Sabuuradda Ku Qoran</th><td><b>${escapeHtml(o.board_text)}</b></td></tr>
+          <tr><th>Casharka Scheme-ka ee La Helay</th><td>${o.matched_topic?escapeHtml(o.matched_topic):"— Lama helin"}</td></tr>
+          <tr><th>Toddobaadka Scheme-ka</th><td>${o.planned_week!=null?o.planned_week:"—"}</td></tr>
+          <tr><th>Toddobaadka Hadda (Semester)</th><td>${o.current_week!=null?o.current_week:"—"}</td></tr>
+          <tr><th>Xaalada</th><td><b style="color:${col};">${escapeHtml(d.label||"")}</b></td></tr>
+          ${d.positionPct!=null&&d.expectedPct!=null?`<tr><th>Horumarka Scheme-ka</th><td>Halka uu joogo: <b>${d.positionPct}%</b> · Halka la rabay ilaa hadda: <b>${d.expectedPct}%</b></td></tr>`:""}
+          ${o.note?`<tr><th>Fiiro Gaar ah</th><td>${escapeHtml(o.note)}</td></tr>`:""}
+        </tbody>
+      </table>
+      <h3 style="margin:14px 0 4px;">Faahfaahin iyo Talooyin</h3>
+      ${sowAdviceHtml(o.advice)}
+      <div style="display:flex;justify-content:space-between;margin-top:30px;font-size:.8rem;">
+        <div>Kormeere: ______________________</div>
+        <div>Macallin: ______________________</div>
+      </div>
+    </div>`;
+  }
+  function teacherSowReportHtml(tch, list){
+    const n = list.length;
+    const cnt = (s)=>list.filter(o=>o.status===s).length;
+    const latest = list[0];
+    const trend = sowTrendAdvice(list);
+    const subjOf = (k)=>(subjectCatalog.find(s=>s.key===k)||{}).title || k;
+    return `<div id="reportArea">
+      <div class="report-header">
+        <img src="/logo.jpg" alt="logo">
+        <div>
+          <h2 style="margin:0;">Dugsiga Howlwadaag Sare</h2>
+          <div style="font-size:.85rem;color:#555;">Warbixinta Macallinka — La Socodka Scheme of Work</div>
+        </div>
+      </div>
+      <table>
+        <tbody>
+          <tr><th style="width:38%;">Macallinka</th><td>${escapeHtml(tch.name)}</td></tr>
+          <tr><th>Maadada</th><td>${escapeHtml(tch.subject||"—")}</td></tr>
+          <tr><th>Tirada Kormeerrada</th><td>${n}</td></tr>
+          <tr><th>La Socda Jadwalka</th><td>${cnt("on_track")} (${n?Math.round(cnt("on_track")/n*100):0}%)</td></tr>
+          <tr><th>Ka Dib Yahay</th><td>${cnt("behind")}</td></tr>
+          <tr><th>Ka Hor Yahay</th><td>${cnt("ahead")}</td></tr>
+          <tr><th>Ma Waafaqsana Scheme-ka</th><td>${cnt("off_scheme")}</td></tr>
+          <tr><th>Taariikhda Warbixinta</th><td>${new Date().toLocaleDateString()}</td></tr>
+        </tbody>
+      </table>
+      ${latest?`<h3 style="margin:14px 0 4px;">Xaaladda Ugu Dambeysay — ${escapeHtml(subjOf(latest.subject_key))} (${escapeHtml(latest.class_name)})</h3>
+      <p style="font-size:.85rem;margin:4px 0;">Cinwaanka sabuuradda: <b>${escapeHtml(latest.board_text)}</b> · <b style="color:${sowColor((latest.detail||{}).cls)};">${escapeHtml((latest.detail||{}).label||"")}</b></p>
+      ${sowAdviceHtml(latest.advice)}`:""}
+      ${trend.length?`<h3 style="margin:14px 0 4px;">Isbeddelka Muddada Dheer</h3>${sowAdviceHtml(trend)}`:""}
+      <h3 style="margin:14px 0 4px;">Taariikhda Kormeerrada</h3>
+      <table>
+        <thead><tr><th>Taariikh</th><th>Maado / Fasal</th><th>Cinwaanka Sabuuradda</th><th>Tod. Scheme</th><th>Tod. Hadda</th><th>Xaalada</th></tr></thead>
+        <tbody>${list.map(o=>`<tr>
+          <td>${new Date(o.observed_at).toLocaleDateString()}</td>
+          <td>${escapeHtml(subjOf(o.subject_key))} / ${escapeHtml(o.class_name)}${o.section?" "+escapeHtml(o.section):""}</td>
+          <td>${escapeHtml(o.board_text)}</td>
+          <td>${o.planned_week!=null?o.planned_week:"—"}</td>
+          <td>${o.current_week!=null?o.current_week:"—"}</td>
+          <td style="color:${sowColor((o.detail||{}).cls)};font-weight:700;">${escapeHtml((o.detail||{}).label||"")}</td>
+        </tr>`).join("")}</tbody>
+      </table>
+      <div style="display:flex;justify-content:space-between;margin-top:30px;font-size:.8rem;">
+        <div>Kormeere: ______________________</div>
+        <div>Macallin: ______________________</div>
+      </div>
+    </div>`;
   }
 
-  function renderSowUpload(body){
+  function renderSowObserve(body){
+    if (!teachers.length){
+      body.innerHTML = `<div class="card"><div class="empty">Marka hore ku dar macallimiin (tab-ka Macallimiinta).</div></div>`;
+      return;
+    }
     if (!subjectCatalog.length){
       body.innerHTML = `<div class="card"><div class="empty">Marka hore ku dar maado (tab-ka Ardayda → 🎓 Maadooyinka Dugsiga).</div></div>`;
       return;
     }
     const classes = studentClasses().length ? studentClasses() : ["Form 4"];
-    if (!sowSubject || !subjectCatalog.some(s=>s.key===sowSubject)) sowSubject = subjectCatalog[0].key;
-    if (!sowClass || !classes.includes(sowClass)) sowClass = classes[0];
-    const existing = sowTopicsFor(sowSubject, sowClass);
-
-    body.innerHTML = `
-      <div class="card">
-        <h2>Dooro Maadada iyo Fasalka</h2>
-        <label>Maadada</label>
-        <select id="sowSubjectSel2">${subjectCatalog.map(s=>`<option value="${escapeHtml(s.key)}" ${s.key===sowSubject?"selected":""}>${escapeHtml(s.title)}</option>`).join("")}</select>
-        <label>Fasalka</label>
-        <select id="sowClassSel2">${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===sowClass?"selected":""}>${escapeHtml(c)}</option>`).join("")}</select>
-      </div>
-      <div class="card">
-        <h2>📤 Soo Deji Scheme of Work (Excel/CSV)</h2>
-        <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">
-          File-ku waa in uu leeyahay tiirar "Week" iyo "Topic" (ama "Lesson"). Soo dejintani way <b>beddeshaa</b> Scheme of Work-kii hore ee maadadan iyo fasalkan.
-          ${existing.length ? ` Hadda waxaa jira ${existing.length} cashar oo la geliyay (${existing.filter(t=>t.done).length} dhammaystiran).` : ""}
-        </div>
-        <input type="file" id="sowFileInput" accept=".xlsx,.xls,.csv">
-        <div id="sowFileResult" style="font-size:.8rem;color:var(--text-dim);margin-top:8px;"></div>
-      </div>
-      <div class="card">
-        <h2>Ama ku dheji qoraal (Week{tab}Topic, hal xariiq walba)</h2>
-        <textarea id="sowPasteText" style="min-height:160px;" placeholder="1	Intro to Algebra
-2	Linear Equations
-3	Quadratic Equations"></textarea>
-        <button class="btn secondary" id="btnSowPaste">📋 Beddel Scheme-ka</button>
-        <div id="sowPasteResult" style="font-size:.8rem;color:var(--text-dim);margin-top:6px;"></div>
-      </div>
-      <div class="card">
-        <h2>➕ Ku Dar Hal Cashar</h2>
-        <label>Toddobaadka (ikhtiyaari)</label>
-        <input type="text" id="sowNewWeek" placeholder="tusaale: 4">
-        <label>Cashaarka / Mowduuca</label>
-        <input type="text" id="sowNewTopic" placeholder="tusaale: Quadratic Equations">
-        <button class="btn" id="btnSowAddOne">➕ Ku Dar</button>
-      </div>
-      <div class="card">
-        <h2>Casharada Jira (${existing.length})</h2>
-        ${existing.length===0 ? `<div class="empty">Wali cashar lama gelin.</div>` :
-        existing.map(t=>`<div class="student-row" style="cursor:default;">
-          <div class="name">${t.week_no!=null?`W${t.week_no} — `:""}${escapeHtml(t.topic)} ${t.done?'<span class="badge good">✓</span>':''}</div>
-          <button class="del-x" data-delsow2="${t.id}" title="Tirtir">✕</button>
-        </div>`).join("")}
-      </div>
-      ${existing.length ? `
-      <div class="card">
-        <h2>🗑️ Tirtir Dhammaan Scheme-ka</h2>
-        <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">
-          Haddii aad khalad ku samaysay soo gelinta, waxaad halkan ka tirtiri kartaa dhammaan ${existing.length}-da cashar ee "${escapeHtml((subjectCatalog.find(s=>s.key===sowSubject)||{}).title||"")}" — ${escapeHtml(sowClass)}, kadibna mid cusub soo geli.
-        </div>
-        <button class="btn secondary" id="btnClearSow" style="color:var(--bad);border-color:var(--bad);">🗑️ Tirtir Dhammaan Scheme-ka Maadadan</button>
-      </div>` : ""}
-    `;
-    document.getElementById("sowSubjectSel2").addEventListener("change",(e)=>{ sowSubject=e.target.value; render(); });
-    document.getElementById("sowClassSel2").addEventListener("change",(e)=>{ sowClass=e.target.value; render(); });
-
-    document.getElementById("sowFileInput").addEventListener("change", async (e)=>{
-      const file = e.target.files[0];
-      if (!file) return;
-      const setMsg = (m)=>{ const d=document.getElementById("sowFileResult"); if (d) d.textContent = m; };
-      setMsg("⏳ Akhrinaya file-ka...");
-      try {
-        const rows = await extractSowRowsFromFile(file);
-        if (!rows.length){ setMsg("⚠️ Wax cashar ah lagama helin file-kan. Hubi tiirarka Week/Topic."); return; }
-        setMsg(`⏳ Waa la helay ${rows.length} cashar, geliyaa...`);
-        const r = await bulkSowTopics({ subjectKey: sowSubject, className: sowClass, rows });
-        setMsg(`✅ ${r.created} cashar ayaa loo geliyay Scheme of Work-ka.`);
-      } catch(err){ setMsg("⚠️ Khalad: " + (err && err.message ? err.message : "wax lama akhriyi karin file-ka.")); }
-    });
-
-    document.getElementById("btnSowPaste").addEventListener("click", async ()=>{
-      const raw = document.getElementById("sowPasteText").value;
-      const rows = parseSowRows(raw);
-      const setMsg = (m)=>{ const d=document.getElementById("sowPasteResult"); if (d) d.textContent = m; };
-      if (!rows.length){ setMsg("⚠️ Wax xog ah lama helin."); return; }
-      const btn = document.getElementById("btnSowPaste"); btn.disabled=true; btn.textContent="Kaydinaya...";
-      try {
-        const r = await bulkSowTopics({ subjectKey: sowSubject, className: sowClass, rows });
-        const d = document.getElementById("sowPasteResult"); if (d) d.textContent = `✅ ${r.created} cashar ayaa loo geliyay.`;
-      } finally { btn.disabled=false; btn.textContent="📋 Beddel Scheme-ka"; }
-    });
-
-    document.getElementById("btnSowAddOne").addEventListener("click", async ()=>{
-      const weekNo = document.getElementById("sowNewWeek").value.trim();
-      const topic = document.getElementById("sowNewTopic").value.trim();
-      if (!topic){ alert("Fadlan geli cashaarka."); return; }
-      const btn = document.getElementById("btnSowAddOne"); btn.disabled=true;
-      try { await addSowTopic({ subjectKey: sowSubject, className: sowClass, weekNo: weekNo||null, topic }); } finally { btn.disabled=false; }
-    });
-
-    body.querySelectorAll("[data-delsow2]").forEach(el=>{
-      el.addEventListener("click", async ()=>{
-        if (confirm("Ma hubtaa inaad tirtirto casharkan?")) await deleteSowTopic(el.dataset.delsow2);
-      });
-    });
-    const clearBtn = document.getElementById("btnClearSow");
-    if (clearBtn){
-      clearBtn.addEventListener("click", async ()=>{
-        const subjTitle = (subjectCatalog.find(s=>s.key===sowSubject)||{}).title||"";
-        if (confirm(`Ma hubtaa inaad tirtirto dhammaan ${existing.length}-da cashar ee "${subjTitle}" — ${sowClass}? Tallaabadan lama soo celin karo.`)){
-          clearBtn.disabled = true; clearBtn.textContent = "Tirtirayaa...";
-          try { await clearSowScheme(sowSubject, sowClass); } finally { clearBtn.disabled = false; clearBtn.textContent = "🗑️ Tirtir Dhammaan Scheme-ka Maadadan"; }
-        }
-      });
+    if (!obsTeacher || !teachers.some(t=>t.id===obsTeacher)){
+      obsTeacher = teachers[0].id;
+      obsSubject = null;
     }
-  }
+    const tch = teachers.find(t=>t.id===obsTeacher);
+    if (!obsSubject || !subjectCatalog.some(s=>s.key===obsSubject)) obsSubject = sowGuessSubject(tch) || subjectCatalog[0].key;
+    if (!obsClass || !classes.includes(obsClass)) obsClass = classes[0];
+    const sections = studentSections(obsClass);
+    if (sections.length){ if (obsSection===null || !sections.includes(obsSection)) obsSection = sections[0]; }
+    else obsSection = "";
 
-  function renderSowSettings(body){
+    const topics = sowTopicsFor(obsSubject, obsClass);
     const week = currentWeekNo();
+    const subjTitle = (subjectCatalog.find(s=>s.key===obsSubject)||{}).title || "";
+    const lastObs = obsLastId ? sowObservations.find(o=>o.id===obsLastId) : null;
+
+    let expectedNow = [];
+    if (week!=null){
+      expectedNow = topics.filter(t=>t.week_no===week).map(t=>sowClean(t.topic));
+      if (!expectedNow.length){
+        const past = topics.filter(t=>t.week_no!=null && t.week_no<week).sort((a,b)=>b.week_no-a.week_no)[0];
+        if (past) expectedNow = [sowClean(past.topic)];
+      }
+    }
+
     body.innerHTML = `
+      ${lastObs ? `
       <div class="card">
-        <h2>⚙️ Dejinta Semester-ka</h2>
-        <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">
-          Geli taariikhda ay ka bilaabatay semester-ka/term-ka si nidaamku u xisaabiyo toddobaadka hadda socda, oo uu kuu sheego halka aad joogto Scheme of Work marka loo eego jadwalka.
+        <h2>✅ Kormeerka waa la kaydiyay</h2>
+        <div class="no-print" style="margin-bottom:10px;">
+          <button class="btn gold" id="btnObsPrint">🖨️ Daabac / Deji Warbixinta (PDF)</button>
+          <button class="btn secondary" id="btnObsNew">➕ Kormeer Cusub</button>
         </div>
-        <label>Taariikhda Bilowga Semester-ka</label>
-        <input type="date" id="sowTermStart" value="${escapeHtml(sowSettings.term_start_date||"")}">
-        <button class="btn" id="btnSaveSowSettings">💾 Kaydi</button>
-        ${week!=null ? `<p style="font-size:.85rem;margin-top:10px;">Toddobaadka hadda socda ee semester-ka: <b>${week}</b></p>` : ""}
+        ${obsReportHtml(lastObs)}
+      </div>` : ""}
+      <div class="card no-print">
+        <h2>🚶 Kormeer Fasal</h2>
+        <div class="sub" style="color:var(--text-dim);font-size:.8rem;margin-bottom:8px;">Dooro macallinka iyo fasalka, kadibna qor cinwaanka sabuuradda ku qoran — nidaamku wuxuu isla markiiba la barbar dhigayaa Scheme of Work-ka.</div>
+        <label>Macallinka</label>
+        <select id="obsTeacherSel">${teachers.map(t=>`<option value="${escapeHtml(t.id)}" ${t.id===obsTeacher?"selected":""}>${escapeHtml(t.name)}${t.subject?" — "+escapeHtml(t.subject):""}</option>`).join("")}</select>
+        <label>Maadada</label>
+        <select id="obsSubjectSel">${subjectCatalog.map(s=>`<option value="${escapeHtml(s.key)}" ${s.key===obsSubject?"selected":""}>${escapeHtml(s.title)}</option>`).join("")}</select>
+        ${classes.length>1?`<label>Fasalka</label><select id="obsClassSel">${classes.map(c=>`<option value="${escapeHtml(c)}" ${c===obsClass?"selected":""}>${escapeHtml(c)}</option>`).join("")}</select>`:""}
+        ${sections.length?`<label>Qaybta (Section)</label><select id="obsSectionSel">${sections.map(s=>`<option value="${escapeHtml(s)}" ${s===obsSection?"selected":""}>${escapeHtml(s)}</option>`).join("")}</select>`:""}
+      </div>
+      <div class="card no-print">
+        <h2>📖 Casharka Laga Filayo Toddobaadkan${week!=null?" (Toddobaad "+week+")":""}</h2>
+        ${week==null ? `<div class="compare-note pending">⏳ Taariikhda bilowga semester-ka lama dejin — tag "⚙️ Dejinta Semester-ka".</div>` :
+          !topics.length ? `<div class="compare-note pending">Scheme of Work-ka "${escapeHtml(subjTitle)}" ee ${escapeHtml(obsClass)} wali lama gelin — tag "📤 Soo Deji Scheme".</div>` :
+          expectedNow.length ? `<p style="font-weight:700;color:var(--navy);margin:4px 0;">${expectedNow.map(escapeHtml).join(" / ")}</p>` :
+          `<div class="empty">Wax cashar ah looma qorsheeyn toddobaadkan.</div>`}
+        <label>Cinwaanka Sabuuradda Ku Qoran</label>
+        <input type="text" id="obsBoardInput" placeholder="tusaale: Simple harmonic motion; period in SHM" value="${escapeHtml(obsBoard)}">
+        <div id="obsLive"></div>
       </div>
     `;
-    document.getElementById("btnSaveSowSettings").addEventListener("click", async ()=>{
-      const val = document.getElementById("sowTermStart").value;
-      const btn = document.getElementById("btnSaveSowSettings"); btn.disabled=true;
-      try { await saveSowSettings(val); } finally { btn.disabled=false; }
-    });
+
+    const bindSel = (id, fn)=>{ const el = document.getElementById(id); if (el) el.addEventListener("change", fn); };
+    bindSel("obsTeacherSel", (e)=>{ obsTeacher=e.target.value; obsSubject=null; obsPick=null; render(); });
+    bindSel("obsSubjectSel", (e)=>{ obsSubject=e.target.value; obsPick=null; render(); });
+    bindSel("obsClassSel", (e)=>{ obsClass=e.target.value; obsSection=null; obsPick=null; render(); });
+    bindSel("obsSectionSel", (e)=>{ obsSection=e.target.value; render(); });
+    const pb = document.getElementById("btnObsPrint"); if (pb) pb.addEventListener("click", ()=>window.print());
+    const nb = document.getElementById("btnObsNew"); if (nb) nb.addEventListener("click", ()=>{ obsLastId=null; render(); });
+
+    const live = document.getElementById("obsLive");
+    function updateLive(){
+      const board = obsBoard.trim();
+      if (!board){ live.innerHTML = ""; return; }
+      if (!topics.length){ live.innerHTML = ""; return; }
+      const ranked = sowRank(topics, board);
+      const ch = sowChoose(ranked);
+      let html = "";
+      if (ranked.length){
+        html += `<label>Casharka ugu dhow ee Scheme-ka (taabo si aad u xaqiijiso)</label>`;
+        html += ranked.slice(0,4).map(r=>{
+          const sel = ch.matched && ch.matched.id===r.t.id;
+          return `<div class="student-row" data-pick="${r.t.id}" style="${sel?"border:2px solid var(--good);border-radius:10px;padding:10px;":""}">
+            <div><div class="name">${r.t.week_no!=null?`<span style="color:var(--text-dim);font-weight:600;">W${r.t.week_no}</span> `:""}${escapeHtml(sowClean(r.t.topic))}</div></div>
+            <span class="badge ${sel?"good":"neutral"}">${Math.round(r.score*100)}%</span>
+          </div>`;
+        }).join("");
+      } else {
+        html += `<div class="compare-note pending">Cinwaankan wax la mid ah lagama helin Scheme-ka.</div>`;
+      }
+      html += `<button class="subj-chip ${obsPick==="__none__"?"sel":""}" data-pick="__none__" style="margin-top:8px;">✕ Kuma jiro Scheme-ka</button>`;
+      const decided = !ch.pending;
+      if (decided){
+        const an = sowAnalyze(topics, ch.matched, week, board);
+        html += `<div style="margin-top:12px;padding:12px;border-radius:12px;background:var(--surface-2);">
+          <span class="badge ${an.detail.cls}">${escapeHtml(an.detail.label)}</span>
+          ${an.detail.positionPct!=null&&an.detail.expectedPct!=null?`<span style="font-size:.8rem;margin-left:8px;">Halka uu joogo ${an.detail.positionPct}% · la rabay ${an.detail.expectedPct}%</span>`:""}
+          <div style="margin-top:8px;">${sowAdviceHtml(an.advice)}</div>
+        </div>
+        <label>Fiiro gaar ah (ikhtiyaari)</label>
+        <input type="text" id="obsNoteInput" placeholder="tusaale: fasalka wuu is-dhexgalay, dib-u-eegis ayaa la sameeyay..." value="${escapeHtml(obsNote)}">
+        <button class="btn" id="btnObsSave" style="margin-top:10px;">💾 Kaydi Kormeerka</button>`;
+        live.innerHTML = html;
+        document.getElementById("obsNoteInput").addEventListener("input", (e)=>{ obsNote = e.target.value; });
+        document.getElementById("btnObsSave").addEventListener("click", async ()=>{
+          const btn = document.getElementById("btnObsSave"); btn.disabled = true; btn.textContent = "Kaydinaya...";
+          try {
+            const payload = {
+              teacherId: obsTeacher, subjectKey: obsSubject, className: obsClass, section: obsSection||"",
+              boardText: board, matchedTopicId: ch.matched ? ch.matched.id : null, matchedTopic: an.matchedTitle,
+              plannedWeek: an.planned, currentWeek: week, diffWeeks: an.diff, status: an.status,
+              matchScore: ch.score || 0, advice: an.advice, detail: an.detail, note: obsNote
+            };
+            const r = await api("/api/sow/observations", { method:"POST", body: JSON.stringify(payload) });
+            obsLastId = r.id; obsBoard = ""; obsNote = ""; obsPick = null;
+            await loadAll();
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          } catch(err){
+            btn.disabled = false; btn.textContent = "💾 Kaydi Kormeerka";
+            alert("Khalad: " + (err && err.message ? err.message : "lama kaydin karin"));
+          }
+        });
+      } else {
+        html += `<div class="compare-note pending" style="margin-top:10px;">Dooro casharka saxda ah ee kor ku qoran, ama taabo "Kuma jiro Scheme-ka".</div>`;
+        live.innerHTML = html;
+      }
+      live.querySelectorAll("[data-pick]").forEach(el=>{
+        el.addEventListener("click", ()=>{ obsPick = el.dataset.pick; updateLive(); });
+      });
+    }
+    document.getElementById("obsBoardInput").addEventListener("input", (e)=>{ obsBoard = e.target.value; obsPick = null; updateLive(); });
+    updateLive();
   }
 
-  function renderNewEval(){
-    const today = new Date().toISOString().slice(0,10);
-    if (teachers.length===0){
-      app.innerHTML = `<div class="card"><div class="empty">Marka hore ku dar macallin tab-ka "Macallimiinta".</div></div>`;
-      return;
-    }
-    evalState = {};
-    CRITERIA.forEach(c=>{ evalState[c.key] = { rating:null, comment:"" }; });
+  function renderSowTeacherReport(body){
+    const withObs = (id)=>sowObservations.filter(o=>o.teacher_id===id);
+    const subjOf = (k)=>(subjectCatalog.find(s=>s.key===k)||{}).title || k;
+    if (repTeacherSow!=="__ALL__" && !teachers.some(t=>t.id===repTeacherSow)) repTeacherSow = "__ALL__";
+    const sel = `<div class="card no-print">
+      <h2>📈 Warbixinta Macallimiinta — Scheme of Work</h2>
+      <label>Macallinka</label>
+      <select id="repTchSel">
+        <option value="__ALL__" ${repTeacherSow==="__ALL__"?"selected":""}>Dhammaan Macallimiinta (Dulmar)</option>
+        ${teachers.map(t=>`<option value="${escapeHtml(t.id)}" ${t.id===repTeacherSow?"selected":""}>${escapeHtml(t.name)}</option>`).join("")}
+      </select>
+      <button class="btn gold" id="btnRepPrint" style="margin-top:10px;">🖨️ Daabac / Deji Warbixinta (PDF)</button>
+    </div>`;
 
-    app.innerHTML = `
-      <div class="card">
-        <h2>Foomka Kormeerka iyo Qiimeynta Macallinka</h2>
-        <label>Dugsiga</label>
-        <input type="text" id="evalSchool" value="Dugsiga Howlwadaag Sare">
-        <label>Dooro Macallinka</label>
-        <select id="evalTeacherSel">
-          <option value="">— Dooro —</option>
-          ${teachers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(t=>`<option value="${t.id}" data-subject="${escapeHtml(t.subject||"")}" ${preselectTeacher===t.id?"selected":""}>${escapeHtml(t.name)}${t.subject?" — "+escapeHtml(t.subject):""}</option>`).join("")}
-        </select>
-        <label>Maadada</label>
-        <select id="evalSubjectSel">
-          <option value="">— Dooro Maadada —</option>
-          ${subjectCatalog.map(s=>`<option value="${escapeHtml(s.key)}">${escapeHtml(s.title)}</option>`).join("")}
-          <option value="__other__">Kale (qor gacanta)</option>
-        </select>
-        <input type="text" id="evalSubjectOther" placeholder="Qor maadada" style="display:none;margin-top:6px;">
-        <label>Fasalka</label>
-        <input type="text" id="evalClass" placeholder="tusaale: Fasalka 5" list="evalClassList">
-        <datalist id="evalClassList">${studentClasses().map(c=>`<option value="${escapeHtml(c)}">`).join("")}</datalist>
-        <label>Taariikhda Kormeerka</label>
-        <input type="date" id="evalDate" value="${today}">
-        <div id="sowHintBox"></div>
-        <label>Magaca Kormeeraha</label>
-        <input type="text" id="evalSupervisor" placeholder="Magacaaga">
-        <div class="scale-legend">
-          <b>Heerarka Qiimeynta:</b><br>
-          5 = Heer Sare &nbsp; 4 = Wanaagsan &nbsp; 3 = La Aqbali Karo &nbsp; 2 = U Baahan Horumarin &nbsp; 1 = U Baahan Taageero Degdeg ah
-        </div>
-        <label>Progress-ka Buuxinta (<span id="progressCount">0</span>/${TOTAL_ITEMS})</label>
-        <div class="progress-bar-wrap"><div class="progress-bar" id="progressBar" style="width:0%;"></div></div>
-      </div>
-
-      <div id="itemsWrap"></div>
-
-      <div class="card">
-        <h2>Gunaad</h2>
-        <label>Gunaadka Kormeeraha</label>
-        <textarea id="evalConclusion" placeholder="Gunaadka guud ee qiimeynta..."></textarea>
-        <button class="btn" id="saveEvalBtn" disabled>💾 Kaydi Qiimeynta (buuxi 10-da su'aal marka hore)</button>
-      </div>
-    `;
-
-    const teacherSel = document.getElementById("evalTeacherSel");
-    const subjectSel = document.getElementById("evalSubjectSel");
-    const subjectOther = document.getElementById("evalSubjectOther");
-    const classInput = document.getElementById("evalClass");
-    const dateInput = document.getElementById("evalDate");
-
-    // Match a teacher's free-text subject (typed when the teacher was added) to the
-    // official subject catalog used by the Scheme of Work, so the SOW hint can find it.
-    function applySubjectFromTeacher(subjText){
-      if (!subjText) return;
-      const cat = subjectCatalog.find(s=>s.title.toLowerCase()===subjText.toLowerCase() || s.key===subjText.toLowerCase());
-      if (cat){ subjectSel.value = cat.key; subjectOther.style.display = "none"; }
-      else { subjectSel.value = "__other__"; subjectOther.style.display = "block"; subjectOther.value = subjText; }
-    }
-    teacherSel.addEventListener("change", ()=>{
-      const opt = teacherSel.options[teacherSel.selectedIndex];
-      applySubjectFromTeacher(opt ? opt.dataset.subject : "");
-      renderSowHint();
-    });
-    subjectSel.addEventListener("change", ()=>{
-      subjectOther.style.display = subjectSel.value === "__other__" ? "block" : "none";
-      renderSowHint();
-    });
-    subjectOther.addEventListener("input", renderSowHint);
-    classInput.addEventListener("input", renderSowHint);
-    dateInput.addEventListener("change", renderSowHint);
-    if (preselectTeacher){
-      const opt = Array.from(teacherSel.options).find(o=>o.value===preselectTeacher);
-      applySubjectFromTeacher(opt ? opt.dataset.subject : "");
-    }
-
-    // ---- Scheme of Work hint: the supervisor types the topic seen written on the
-    // board, and the system auto
+    if (repTeacherSow==="__ALL__"){
+      const rows = teachers.map(t=>{
+        const list = withObs(t.id);
+        const latest = list[0];
+        const onTrack = list.filter(o=>o.status==="on_track").length;
+        return { t, n:list.length, latest, pct: list.length?Math.

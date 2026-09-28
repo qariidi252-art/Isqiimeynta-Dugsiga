@@ -115,25 +115,6 @@ async function initDb() {
     completed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     completed_by TEXT DEFAULT ''
   )`);
-  await pool.query(`CREATE TABLE IF NOT EXISTS sow_observations (
-    id TEXT PRIMARY KEY,
-    teacher_id TEXT REFERENCES teachers(id) ON DELETE CASCADE,
-    subject_key TEXT NOT NULL,
-    class_name TEXT NOT NULL,
-    section TEXT DEFAULT '',
-    board_text TEXT NOT NULL,
-    matched_topic_id TEXT,
-    matched_topic TEXT DEFAULT '',
-    planned_week INT,
-    current_week INT,
-    diff_weeks INT,
-    status TEXT NOT NULL DEFAULT 'unknown',
-    match_score NUMERIC DEFAULT 0,
-    advice JSONB NOT NULL DEFAULT '[]',
-    detail JSONB NOT NULL DEFAULT '{}',
-    note TEXT DEFAULT '',
-    observed_at TIMESTAMPTZ DEFAULT now()
-  )`);
 
   console.log("✅ Database ready");
 }
@@ -565,67 +546,6 @@ app.delete("/api/sow/topics", requireAdmin, async (req, res) => {
   }
 });
 
-// ---------- Classroom observations vs Scheme of Work (admin) ----------
-app.get("/api/sow/observations", requireAdmin, async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      "SELECT * FROM sow_observations ORDER BY observed_at DESC LIMIT 2000"
-    );
-    res.json(rows);
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "server error" });
-  }
-});
-
-app.post("/api/sow/observations", requireAdmin, async (req, res) => {
-  try {
-    const b = req.body || {};
-    if (!b.teacherId || !b.subjectKey || !b.className || !b.boardText || !String(b.boardText).trim())
-      return res.status(400).json({ error: "teacherId, subjectKey, className and boardText are required" });
-    const intOrNull = (v) => (v === null || v === undefined || v === "" || isNaN(Number(v)) ? null : Math.round(Number(v)));
-    const id = crypto.randomUUID();
-    await pool.query(
-      `INSERT INTO sow_observations
-        (id, teacher_id, subject_key, class_name, section, board_text, matched_topic_id, matched_topic,
-         planned_week, current_week, diff_weeks, status, match_score, advice, detail, note)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-      [
-        id,
-        b.teacherId,
-        b.subjectKey,
-        b.className,
-        String(b.section || ""),
-        String(b.boardText).trim(),
-        b.matchedTopicId || null,
-        String(b.matchedTopic || ""),
-        intOrNull(b.plannedWeek),
-        intOrNull(b.currentWeek),
-        intOrNull(b.diffWeeks),
-        String(b.status || "unknown"),
-        Number(b.matchScore) || 0,
-        JSON.stringify(Array.isArray(b.advice) ? b.advice : []),
-        JSON.stringify(b.detail && typeof b.detail === "object" ? b.detail : {}),
-        String(b.note || ""),
-      ]
-    );
-    res.json({ ok: true, id });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "server error" });
-  }
-});
-
-app.delete("/api/sow/observations/:id", requireAdmin, async (req, res) => {
-  try {
-    await pool.query("DELETE FROM sow_observations WHERE id=$1", [req.params.id]);
-    res.json({ ok: true });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "server error" });
-  }
-});
-
 app.delete("/api/sow/topics/:id", requireAdmin, async (req, res) => {
   try {
     await pool.query("DELETE FROM sow_topics WHERE id=$1", [req.params.id]);
@@ -646,17 +566,9 @@ app.get("/api/public/:token", async (req, res) => {
       "SELECT * FROM evaluations WHERE teacher_id=$1 ORDER BY date ASC",
       [teacher.id]
     );
-    const obsRes = await pool.query(
-      `SELECT o.*, s.title AS subject_title
-       FROM sow_observations o
-       LEFT JOIN subjects s ON s.id = o.subject_key
-       WHERE o.teacher_id=$1 ORDER BY o.observed_at DESC LIMIT 30`,
-      [teacher.id]
-    );
     res.json({
       teacher: { name: teacher.name, subject: teacher.subject },
       evaluations: evalsRes.rows,
-      sowObservations: obsRes.rows,
     });
   } catch (e) {
     console.error(e);
